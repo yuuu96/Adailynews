@@ -1,0 +1,10 @@
+{
+  "name": "A股情报雷达",
+  "short_name": "情报雷达",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#101820",
+  "lang": "zh-CN",
+  "icons": []
+}

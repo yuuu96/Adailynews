@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101820">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <title>A股情报雷达</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --ink: #111827;
+      --muted: #5f6b7a;
+      --line: #dce2ea;
+      --panel: #ffffff;
+      --accent: #0f766e;
+      --accent-ink: #ffffff;
+      --warn: #b45309;
+      --bad: #b91c1c;
+      --good: #047857;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      line-height: 1.55;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: rgba(246, 247, 249, .94);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--line);
+    }
+    .bar {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 14px 16px 12px;
+      display: grid;
+      gap: 10px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .api-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    input {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 15px;
+      background: #fff;
+      color: var(--ink);
+    }
+    label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    input[type="checkbox"] {
+      width: 16px;
+      min-height: 16px;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font-size: 16px;
+      font-weight: 700;
+      padding: 12px 16px;
+      min-height: 46px;
+    }
+    button:disabled { opacity: .62; }
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+    }
+    section, details {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 17px;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .digest {
+      white-space: pre-wrap;
+      font-size: 15px;
+    }
+    .status-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .source {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: start;
+      border-bottom: 1px solid #edf1f5;
+      padding-bottom: 8px;
+    }
+    .source:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+    .badge {
+      border-radius: 999px;
+      font-size: 12px;
+      padding: 2px 8px;
+      font-weight: 700;
+    }
+    .ok { background: #d1fae5; color: var(--good); }
+    .fail { background: #fee2e2; color: var(--bad); }
+    .small { color: var(--muted); font-size: 13px; }
+    .toast {
+      color: var(--warn);
+      font-size: 13px;
+      min-height: 20px;
+    }
+    .progress-wrap {
+      display: none;
+      gap: 8px;
+    }
+    .progress-track {
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #dbe5ef;
+    }
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+      transition: width .35s ease;
+    }
+    .brief-list {
+      display: grid;
+      gap: 10px;
+    }
+    .brief-block {
+      border: 1px solid #e8edf3;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fbfcfd;
+    }
+    .brief-block h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+    }
+    .brief-block ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .brief-block li {
+      margin: 4px 0;
+    }
+    @media (min-width: 760px) {
+      .bar {
+        grid-template-columns: 1fr auto;
+        align-items: center;
+      }
+      .actions { min-width: 270px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div>
+        <h1>A股情报雷达</h1>
+        <div class="meta">
+          <span id="dateText">暂无报告</span>
+          <span id="aiText">DeepSeek 未运行</span>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="runBtn" type="button">一键生成</button>
+        <span class="small" id="countText"></span>
+      </div>
+      <div class="toast" id="toast"></div>
+      <div class="api-row">
+        <input id="apiKey" type="password" autocomplete="off" placeholder="DeepSeek API Key（可选，不填则只生成原始报告）">
+        <label><input id="saveKey" type="checkbox"> 仅保存在本机浏览器，便于下次使用</label>
+      </div>
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+        <div class="small" id="progressText">准备中...</div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>简洁报告</h2>
+      <div class="brief-list" id="briefList">
+        <div class="digest">点击“一键生成”获取今天的情报摘要。</div>
+      </div>
+    </section>
+    <section>
+      <h2>AI 投研摘要</h2>
+      <div class="digest" id="aiSummary">未生成。</div>
+    </section>
+    <section>
+      <h2>原始聚合摘要</h2>
+      <div class="digest" id="rawDigest">暂无数据。</div>
+    </section>
+    <section>
+      <h2>数据源状态</h2>
+      <div class="status-grid" id="sourceStatus"></div>
+    </section>
+    <details>
+      <summary>查看结构化 JSON</summary>
+      <pre id="jsonDump">{}</pre>
+    </details>
+  </main>
+
+  <script>
+    const runBtn = document.getElementById('runBtn');
+    const toast = document.getElementById('toast');
+    const apiKey = document.getElementById('apiKey');
+    const saveKey = document.getElementById('saveKey');
+    const progressWrap = document.getElementById('progressWrap');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const dateText = document.getElementById('dateText');
+    const aiText = document.getElementById('aiText');
+    const countText = document.getElementById('countText');
+    const briefList = document.getElementById('briefList');
+    const aiSummary = document.getElementById('aiSummary');
+    const rawDigest = document.getElementById('rawDigest');
+    const sourceStatus = document.getElementById('sourceStatus');
+    const jsonDump = document.getElementById('jsonDump');
+
+    function setToast(text) {
+      toast.textContent = text || '';
+    }
+
+    function escapeHtml(text) {
+      return String(text || '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[ch]);
+    }
+
+    function renderBrief(sections) {
+      if (!sections || !sections.length) {
+        briefList.innerHTML = '<div class="digest">暂无简报。</div>';
+        return;
+      }
+      briefList.innerHTML = sections.map(section => `
+        <div class="brief-block">
+          <h3>${escapeHtml(section.title)}</h3>
+          <ul>${(section.items || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+        </div>
+      `).join('');
+    }
+
+    function setProgress(value, text) {
+      progressWrap.style.display = 'grid';
+      progressBar.style.width = `${Math.max(0, Math.min(100, value || 0))}%`;
+      progressText.textContent = text || '';
+    }
+
+    function hideProgress() {
+      progressWrap.style.display = 'none';
+      progressBar.style.width = '0%';
+      progressText.textContent = '';
+    }
+
+    function render(report) {
+      if (!report || report.empty) {
+        setToast(report && report.message ? report.message : '');
+        return;
+      }
+      dateText.textContent = `${report.date || ''} ${report.generated_at || ''}`.trim();
+      aiText.textContent = report.ai_summary ? 'DeepSeek 已生成' : `DeepSeek 未生成：${report.ai_error || '无'}`;
+      renderBrief(report.brief_sections);
+      aiSummary.textContent = report.ai_summary || `AI 摘要未生成：${report.ai_error || '未知原因'}`;
+      rawDigest.textContent = report.raw_digest || '暂无可用数据。';
+      const statuses = report.source_status || [];
+      countText.textContent = `${statuses.filter(s => s.ok).length}/${statuses.length}`;
+      sourceStatus.innerHTML = statuses.map(s => `
+        <div class="source">
+          <span class="badge ${s.ok ? 'ok' : 'fail'}">${s.ok ? 'OK' : 'FAIL'}</span>
+          <div>
+            <strong>${s.name}</strong>
+            ${s.error ? `<div class="small">${s.error}</div>` : ''}
+          </div>
+          <span class="small">${s.elapsed_ms}ms</span>
+        </div>
+      `).join('');
+      jsonDump.textContent = JSON.stringify(report.sources || report, null, 2);
+    }
+
+    async function loadLatest() {
+      try {
+        const res = await fetch('/api/latest', { cache: 'no-store' });
+        render(await res.json());
+      } catch (err) {
+        setToast(`读取失败：${err.message}`);
+      }
+    }
+
+    async function runReport() {
+      runBtn.disabled = true;
+      runBtn.textContent = '生成中...';
+      const started = Date.now();
+      setProgress(1, '提交任务中...');
+      setToast('正在采集数据。');
+      if (saveKey.checked && apiKey.value.trim()) {
+        localStorage.setItem('deepseek_api_key', apiKey.value.trim());
+      } else if (!saveKey.checked) {
+        localStorage.removeItem('deepseek_api_key');
+      }
+      try {
+        const res = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deepseek_api_key: apiKey.value.trim(),
+            deepseek_model: 'deepseek-v4-pro'
+          })
+        });
+        const startData = await res.json();
+        if (!res.ok) throw new Error(startData.error || '启动失败');
+        const jobId = startData.job_id;
+        let finalReport = null;
+        while (!finalReport) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const jobRes = await fetch(`/api/job/${jobId}`, { cache: 'no-store' });
+          const job = await jobRes.json();
+          if (!jobRes.ok) throw new Error(job.error || '任务不存在');
+          const elapsed = Math.max(1, Math.round((Date.now() - started) / 1000));
+          const progress = job.progress || 1;
+          const eta = progress > 5 && progress < 100 ? Math.max(1, Math.round(elapsed * (100 - progress) / progress)) : null;
+          const etaText = eta ? `，预计还需 ${eta}s` : '';
+          setProgress(progress, `${job.current_source || '处理中'} · 已等待 ${elapsed}s${etaText}`);
+          if (job.status === 'done') finalReport = job.report;
+          if (job.status === 'failed') throw new Error(job.error || '生成失败');
+        }
+        render(finalReport);
+        setToast('已生成最新报告。');
+      } catch (err) {
+        setToast(`生成失败：${err.message}`);
+      } finally {
+        runBtn.disabled = false;
+        runBtn.textContent = '一键生成';
+        setTimeout(hideProgress, 1200);
+      }
+    }
+
+    runBtn.addEventListener('click', runReport);
+    const storedKey = localStorage.getItem('deepseek_api_key');
+    if (storedKey) {
+      apiKey.value = storedKey;
+      saveKey.checked = true;
+    }
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+    loadLatest();
+  </script>
+</body>
+</html>
