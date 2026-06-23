@@ -13,6 +13,7 @@ import multiprocessing as mp
 import os
 import re
 import time
+import traceback
 import urllib.request
 from collections import Counter
 from dataclasses import dataclass
@@ -1356,6 +1357,44 @@ def render_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def write_report_files(report: dict[str, Any]) -> None:
+    dated_json = REPORT_DIR / f"{report['date']}.json"
+    dated_md = REPORT_DIR / f"{report['date']}.md"
+    for path in [dated_json, LATEST_JSON]:
+        path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    for path in [dated_md, LATEST_MD]:
+        path.write_text(report["markdown"], encoding="utf-8")
+
+
+def emergency_report(error: str, tb: str) -> dict[str, Any]:
+    ensure_env()
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    result = SourceResult("运行异常", False, {"traceback": tb}, error=error, elapsed_ms=0)
+    report = {
+        "date": date.today().isoformat(),
+        "generated_at": generated_at,
+        "ai_summary": None,
+        "ai_error": "生成流程异常，已输出降级报告",
+        "raw_digest": f"生成流程异常：{error}\n\n{tb}",
+        "source_status": [
+            {"name": result.name, "ok": result.ok, "error": result.error, "elapsed_ms": result.elapsed_ms}
+        ],
+        "brief_sections": [
+            {
+                "type": "status",
+                "title": "数据源状态与口径",
+                "summary": "生成流程异常，已输出降级报告；请查看原始聚合摘要中的 traceback。",
+                "statuses": [{"name": result.name, "ok": result.ok, "error": result.error, "elapsed_ms": result.elapsed_ms}],
+                "items": [f"FAIL 运行异常：{error}"],
+            }
+        ],
+        "sources": {result.name: {"ok": result.ok, "data": result.data, "error": result.error}},
+    }
+    report["markdown"] = render_markdown(report)
+    write_report_files(report)
+    return report
+
+
 def generate_report(
     api_key: str | None = None,
     model: str | None = None,
@@ -1423,12 +1462,7 @@ def generate_report(
     if progress_callback:
         progress_callback({"stage": "writing", "source": "写入报告", "done": len(source_defs) + 1, "total": total_steps})
     report["markdown"] = render_markdown(report)
-    dated_json = REPORT_DIR / f"{report['date']}.json"
-    dated_md = REPORT_DIR / f"{report['date']}.md"
-    for path in [dated_json, LATEST_JSON]:
-        path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    for path in [dated_md, LATEST_MD]:
-        path.write_text(report["markdown"], encoding="utf-8")
+    write_report_files(report)
     if progress_callback:
         progress_callback({"stage": "done", "source": "完成", "done": total_steps, "total": total_steps})
     return report
@@ -1447,7 +1481,12 @@ def main() -> None:
     if args.latest:
         print(json.dumps(load_latest(), ensure_ascii=False, indent=2))
         return
-    report = generate_report()
+    try:
+        report = generate_report()
+    except Exception as exc:
+        tb = traceback.format_exc()
+        print(tb)
+        report = emergency_report(f"{type(exc).__name__}: {str(exc)[:300]}", tb)
     print(report["markdown"])
 
 
