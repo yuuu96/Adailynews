@@ -70,13 +70,31 @@ THEME_KEYWORDS = [
     "锂电",
     "氦气",
     "氦",
+    "VC",
+    "电解液",
+    "六氟磷酸锂",
+    "六氟化钨",
+    "磷化铟",
+    "铋",
+    "锑",
+    "氮化镓",
+    "铟",
+    "氧化锆",
+    "石油",
+    "光刻胶",
+    "石英砂",
+    "钨",
+    "锆",
+    "铜",
+    "银",
 ]
 
 SOURCE_TIMEOUTS = {
     "同花顺热点": 15,
     "北向资金": 15,
     "涨停池": 25,
-    "商品价格": 18,
+    "材料雷达": 24,
+    "金属快讯": 15,
     "产业新闻": 25,
     "机构研报": 25,
     "期指席位": 30,
@@ -87,7 +105,7 @@ SOURCE_DEFS: list[tuple[str, Callable[[], Any]]] = []
 
 WATCHLIST = {
     "英伟达/AI算力": ["300502", "300308", "300394", "300476", "002463", "688256", "688041"],
-    "半导体材料": ["688300", "300054", "688126", "603650", "002409", "688146", "600703"],
+    "半导体材料": ["688300", "300054", "688126", "603650", "002409", "688146", "600703", "002549", "600360"],
     "储能锂矿": ["300750", "002466", "002460", "002738", "002756", "300274", "002812"],
     "电网电力": ["601179", "600550", "600973", "002498", "002560", "600236", "000899"],
 }
@@ -97,6 +115,143 @@ FOCUS_TOPICS = {
     "英伟达相关": ["英伟达", "NVIDIA", "GB200", "GB300", "Rubin", "Blackwell", "NVL", "CUDA"],
     "半导体上游材料": ["半导体", "光刻胶", "电子特气", "氦气", "氦", "硅片", "CMP", "ABF", "InP", "GaAs", "前驱体"],
 }
+
+MATERIAL_SIGNAL_WORDS = [
+    "涨价",
+    "断供",
+    "紧缺",
+    "库存低",
+    "库存低位",
+    "出口管制",
+    "限制出口",
+    "停产",
+    "检修",
+    "供需缺口",
+    "供给收缩",
+    "价格上行",
+    "进口受限",
+]
+
+MATERIAL_CONFIG = [
+    {
+        "name": "碳酸锂",
+        "category": "锂电材料",
+        "keywords": ["碳酸锂", "锂盐", "锂矿"],
+        "futures_symbol": "碳酸锂",
+        "inventory_symbol": "碳酸锂",
+        "unit": "元/吨",
+        "tightness": "中性偏紧",
+        "expansion": "中等：资源、盐湖/矿山和爬坡周期约束较强",
+        "related_codes": ["002466", "002460", "300750", "002756"],
+    },
+    {
+        "name": "VC电解液",
+        "category": "锂电添加剂",
+        "keywords": ["VC", "电解液", "添加剂", "碳酸亚乙烯酯"],
+        "tightness": "跟随电解液需求和装置开工变化",
+        "expansion": "中等：化工合成壁垒不极高，但客户认证和环保约束重要",
+        "related_codes": ["002709", "300037", "300073", "002407"],
+    },
+    {
+        "name": "六氟磷酸锂",
+        "category": "锂电电解质",
+        "keywords": ["六氟磷酸锂", "LiPF6", "电解质", "六氟"],
+        "tightness": "周期弹性高，需跟踪价格和库存拐点",
+        "expansion": "中等偏难：氟化工、安全环保和客户认证影响扩产",
+        "related_codes": ["002709", "002407", "002326", "300037"],
+    },
+    {
+        "name": "氦气",
+        "category": "电子特气/稀有气体",
+        "keywords": ["氦气", "氦", "Helium"],
+        "tightness": "偏紧：海外气源、LNG副产和运输约束明显",
+        "expansion": "难：资源禀赋决定供给，新增产能周期长",
+        "related_codes": ["603318", "002549", "688146", "688267"],
+    },
+    {
+        "name": "六氟化钨",
+        "category": "半导体前驱体",
+        "keywords": ["六氟化钨", "WF6", "钨前驱体", "钨"],
+        "tightness": "需跟踪先进制程和存储扩产需求",
+        "expansion": "难：高纯工艺、客户认证和安全环保门槛高",
+        "related_codes": ["688146", "688268", "002409", "600360"],
+    },
+    {
+        "name": "磷化铟",
+        "category": "化合物半导体",
+        "keywords": ["磷化铟", "InP", "铟磷"],
+        "tightness": "偏紧：受光通信和射频需求拉动",
+        "expansion": "难：晶体生长、衬底良率和认证周期长",
+        "related_codes": ["600703", "300394", "300308", "300502"],
+    },
+    {
+        "name": "铋",
+        "category": "小金属",
+        "keywords": ["铋", "金属铋", "秘"],
+        "tightness": "需跟踪小金属价格和出口变化",
+        "expansion": "中等偏难：多为伴生资源，供给弹性有限",
+        "related_codes": ["600497", "000960", "600531"],
+    },
+    {
+        "name": "锑",
+        "category": "小金属/阻燃",
+        "keywords": ["锑", "锑矿", "三氧化二锑"],
+        "tightness": "偏紧：矿端集中，政策和出口扰动敏感",
+        "expansion": "难：资源约束强，新矿开发周期长",
+        "related_codes": ["600301", "002155", "000960"],
+    },
+    {
+        "name": "氮化镓",
+        "category": "第三代半导体",
+        "keywords": ["氮化镓", "GaN", "第三代半导体"],
+        "tightness": "结构性偏紧：高端衬底和外延产能更关键",
+        "expansion": "难：外延、器件工艺和可靠性认证周期长",
+        "related_codes": ["600703", "688234", "300373", "300102"],
+    },
+    {
+        "name": "铟",
+        "category": "小金属/化合物半导体",
+        "keywords": ["铟", "金属铟", "ITO"],
+        "tightness": "偏紧：伴生资源，光电和半导体需求扰动大",
+        "expansion": "难：伴生属性强，新增供给弹性有限",
+        "related_codes": ["000060", "000878", "600362"],
+    },
+    {
+        "name": "氧化锆",
+        "category": "陶瓷/小金属",
+        "keywords": ["氧化锆", "锆", "锆英砂"],
+        "tightness": "需跟踪锆系价格和陶瓷/新能源需求",
+        "expansion": "中等：矿端和高纯加工能力共同约束",
+        "related_codes": ["002167", "002149", "300224"],
+    },
+    {
+        "name": "石油",
+        "category": "能源化工",
+        "keywords": ["石油", "原油", "油价", "OPEC"],
+        "futures_symbol": "原油",
+        "inventory_symbol": "原油",
+        "unit": "元/桶",
+        "tightness": "受地缘、OPEC供给和库存周期驱动",
+        "expansion": "难：上游资本开支和地缘因素影响大",
+        "related_codes": ["600028", "601857", "600938", "600256"],
+    },
+    {
+        "name": "光刻胶",
+        "category": "半导体材料",
+        "keywords": ["光刻胶", "日本光刻胶", "KrF", "ArF", "EUV"],
+        "tightness": "高端品类偏紧，海外供应扰动敏感",
+        "expansion": "难：配方、验证、客户导入和稳定性门槛高",
+        "related_codes": ["603650", "300054", "688199", "300576"],
+    },
+    {
+        "name": "石英砂",
+        "category": "光伏/半导体耗材",
+        "keywords": ["石英砂", "高纯石英", "石英坩埚"],
+        "tightness": "高纯品类易阶段性紧缺",
+        "expansion": "难：矿源品质和提纯工艺决定供给",
+        "related_codes": ["603688", "300395", "600293"],
+    },
+]
 
 POSITIVE_WORDS = [
     "上调",
@@ -210,6 +365,19 @@ def safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except Exception:
         return default
+
+
+def trend_label(change_pct: float | None) -> str:
+    value = safe_float(change_pct, 0)
+    if value >= 3:
+        return "明显上行"
+    if value > 0:
+        return "小幅上行"
+    if value <= -3:
+        return "明显回落"
+    if value < 0:
+        return "小幅回落"
+    return "持平/暂无变化"
 
 
 def get_prefix(code: str) -> str:
@@ -396,6 +564,24 @@ def collect_news() -> dict[str, Any]:
     }
 
 
+def collect_metal_news() -> dict[str, Any]:
+    if ak is None:
+        raise RuntimeError("akshare is not installed")
+    rows = []
+    try:
+        df = ak.futures_news_shmet(symbol="全部")
+        rows = jsonable(df) or []
+    except TypeError:
+        df = ak.futures_news_shmet()
+        rows = jsonable(df) or []
+    items = []
+    for row in rows[:180]:
+        text = text_from_record(row)
+        if is_theme_hit(text):
+            items.append({"source": "上海金属网", "text": text[:500], "raw": row})
+    return {"count": len(items), "items": items[:80]}
+
+
 def classify_sentiment(text: str) -> str:
     pos = sum(1 for word in POSITIVE_WORDS if word in text)
     neg = sum(1 for word in NEGATIVE_WORDS if word in text)
@@ -470,51 +656,98 @@ def collect_reports() -> dict[str, Any]:
     return {"count": len(hits), "sentiment": dict(sentiment_counter), "items": hits[:50]}
 
 
-def collect_commodity_prices() -> dict[str, Any]:
+def pick_realtime_contract(rows: list[dict[str, Any]], material: dict[str, Any]) -> dict[str, Any] | None:
+    if not rows:
+        return None
+    preferred = [
+        row
+        for row in rows
+        if str(row.get("symbol") or "").endswith("0")
+        or "连续" in str(row.get("name") or row.get("名称") or "")
+        or "主力" in str(row.get("name") or row.get("名称") or "")
+    ]
+    return preferred[0] if preferred else rows[0]
+
+
+def collect_material_inventory(symbol: str) -> dict[str, Any] | None:
+    if ak is None:
+        return None
+    try:
+        df = ak.futures_inventory_em(symbol=symbol)
+        rows = jsonable(df) or []
+        if not rows:
+            return None
+        latest = rows[-1]
+        columns = list(latest.keys())
+        date_col = detect_columns(columns, ["日期", "date", "时间"])
+        inv_col = detect_columns(columns, ["库存", "仓单", "数量"])
+        change_col = detect_columns(columns, ["增减", "变化", "change"])
+        return {
+            "source": f"akshare.futures_inventory_em({symbol})",
+            "date": latest.get(date_col) if date_col else None,
+            "value": latest.get(inv_col) if inv_col else None,
+            "change": latest.get(change_col) if change_col else None,
+            "raw": latest,
+        }
+    except Exception as exc:
+        return {"source": f"akshare.futures_inventory_em({symbol})", "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+
+
+def collect_material_radar() -> dict[str, Any]:
     if ak is None:
         raise RuntimeError("akshare is not installed")
-    prices = []
-    try:
-        df = ak.futures_zh_realtime(symbol="碳酸锂")
-        rows = jsonable(df) or []
-        continuous = next((row for row in rows if str(row.get("symbol")) == "LC0"), rows[0] if rows else None)
-        if continuous:
-            prices.append(
-                {
-                    "name": "碳酸锂期货连续",
-                    "symbol": continuous.get("symbol"),
-                    "price": safe_float(continuous.get("trade")),
-                    "unit": "元/吨",
-                    "change_pct": round(safe_float(continuous.get("changepercent")) * 100, 2),
-                    "time": continuous.get("ticktime"),
-                    "date": continuous.get("tradedate"),
-                    "source": "akshare.futures_zh_realtime(碳酸锂)",
-                    "status": "ok",
-                }
-            )
-    except Exception as exc:
-        prices.append({"name": "碳酸锂期货连续", "status": "fail", "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
+    all_codes = sorted({code for item in MATERIAL_CONFIG for code in item.get("related_codes", [])})
+    quote_map = tencent_quote(all_codes)
+    items = []
+    for config in MATERIAL_CONFIG:
+        price = None
+        price_error = None
+        status = "no_realtime_source"
+        if config.get("futures_symbol"):
+            try:
+                df = ak.futures_zh_realtime(symbol=config["futures_symbol"])
+                rows = jsonable(df) or []
+                contract = pick_realtime_contract(rows, config)
+                if contract:
+                    change_pct = round(safe_float(contract.get("changepercent")) * 100, 2)
+                    price = {
+                        "symbol": contract.get("symbol"),
+                        "price": safe_float(contract.get("trade")),
+                        "unit": config.get("unit"),
+                        "change_pct": change_pct,
+                        "trend": trend_label(change_pct),
+                        "time": contract.get("ticktime"),
+                        "date": contract.get("tradedate"),
+                        "source": f"akshare.futures_zh_realtime({config['futures_symbol']})",
+                    }
+                    status = "ok"
+            except Exception as exc:
+                price_error = f"{type(exc).__name__}: {str(exc)[:160]}"
+                status = "fail"
+        inventory = None
+        if config.get("inventory_symbol"):
+            inventory = collect_material_inventory(config["inventory_symbol"])
+        related = [quote_map[code] for code in config.get("related_codes", []) if code in quote_map]
+        items.append(
+            {
+                "name": config["name"],
+                "category": config["category"],
+                "keywords": config["keywords"],
+                "status": status,
+                "price": price,
+                "price_error": price_error,
+                "inventory": inventory,
+                "base_tightness": config["tightness"],
+                "expansion": config["expansion"],
+                "related_stocks": related,
+                "coverage": "有期货/库存直连" if price or inventory else "暂无稳定直连价格，使用新闻/研报/题材线索",
+            }
+        )
+    return {"items": items, "count": len(items)}
 
-    helium_notes = []
-    try:
-        report_data = collect_reports()
-        for item in report_data.get("items", []):
-            text = f"{item.get('title')} {item.get('summary')}"
-            if "氦" in text:
-                helium_notes.append(item)
-    except Exception:
-        helium_notes = []
-    prices.append(
-        {
-            "name": "氦气",
-            "status": "no_realtime_source",
-            "price": None,
-            "unit": None,
-            "source": "暂无稳定直连实时报价；展示氦气相关研报/消息线索",
-            "notes": helium_notes[:8],
-        }
-    )
-    return {"items": prices}
+
+def collect_commodity_prices() -> dict[str, Any]:
+    return collect_material_radar()
 
 
 def detect_columns(columns: list[str], candidates: list[str]) -> str | None:
@@ -616,19 +849,30 @@ def collect_cffex_positions() -> dict[str, Any]:
     summary_rows.sort(key=lambda x: (0 if "中信" in x["party"] else 1, x["symbol"], -abs(x["net_value"])))
     aggregate = {
         "中信": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
+        "其它机构": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
         "重点机构合计": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
     }
     for item in summary_rows:
-        target = "中信" if "中信" in item["party"] else "重点机构合计"
+        target = "中信" if "中信" in item["party"] else "其它机构"
         for field in ["long_value", "long_chg", "short_value", "short_chg"]:
             aggregate[target][field] += int(item.get(field) or 0)
-        if target != "重点机构合计":
-            for field in ["long_value", "long_chg", "short_value", "short_chg"]:
-                aggregate["重点机构合计"][field] += int(item.get(field) or 0)
+            aggregate["重点机构合计"][field] += int(item.get(field) or 0)
     for item in aggregate.values():
         item["net_value"] = item["long_value"] - item["short_value"]
         item["net_chg"] = item["long_chg"] - item["short_chg"]
-    return {"date": query_date, "count": len(normalized), "aggregate": aggregate, "party_summary": summary_rows, "items": normalized}
+    aggregate_rows = []
+    for name in ["中信", "其它机构", "重点机构合计"]:
+        row = {"group": name, **aggregate[name]}
+        row["direction"] = "净多" if row["net_value"] > 0 else ("净空" if row["net_value"] < 0 else "持平")
+        aggregate_rows.append(row)
+    return {
+        "date": query_date,
+        "count": len(normalized),
+        "aggregate": aggregate,
+        "aggregate_rows": aggregate_rows,
+        "party_summary": summary_rows,
+        "items": normalized,
+    }
 
 
 def source_map(results: list[SourceResult]) -> dict[str, SourceResult]:
@@ -701,6 +945,249 @@ def build_focus_items(sources: dict[str, SourceResult]) -> list[str]:
     return items
 
 
+def material_hits(material: dict[str, Any], sources: dict[str, SourceResult], limit: int = 8) -> list[dict[str, Any]]:
+    keywords = [str(k).upper() for k in material.get("keywords", [])]
+    hits: list[dict[str, Any]] = []
+
+    def add(source: str, text: str, link: str | None = None, date_value: str | None = None) -> None:
+        if not text:
+            return
+        upper = text.upper()
+        if not any(keyword in upper for keyword in keywords):
+            return
+        signal = [word for word in MATERIAL_SIGNAL_WORDS if word.upper() in upper]
+        key = f"{source}|{text[:80]}"
+        if any(item.get("key") == key for item in hits):
+            return
+        hits.append(
+            {
+                "key": key,
+                "material": material.get("name"),
+                "source": source,
+                "date": date_value,
+                "text": re.sub(r"\s+", " ", text).strip()[:260],
+                "link": link,
+                "signal": "、".join(signal[:3]) if signal else "相关",
+                "priority": 0 if signal else 1,
+            }
+        )
+
+    news = sources.get("产业新闻")
+    if news and news.ok:
+        for item in news.data.get("items", []):
+            add(item.get("source") or "产业新闻", item.get("text") or "", None, None)
+
+    metal_news = sources.get("金属快讯")
+    if metal_news and metal_news.ok:
+        for item in metal_news.data.get("items", []):
+            add(item.get("source") or "金属快讯", item.get("text") or "", None, None)
+
+    reports = sources.get("机构研报")
+    if reports and reports.ok:
+        for item in reports.data.get("items", []):
+            text = f"{item.get('title') or ''} {item.get('summary') or ''}"
+            add(f"研报/{item.get('org') or ''}".strip("/"), text, item.get("pdf_url"), item.get("date"))
+
+    ths = sources.get("同花顺热点")
+    if ths and ths.ok:
+        for item in ths.data.get("top", []):
+            text = f"{item.get('name')}({item.get('code')}) {item.get('reason')}"
+            add("同花顺题材", text, None, ths.data.get("date"))
+
+    def sort_key(item: dict[str, Any]) -> tuple[int, int]:
+        digits = re.sub(r"\D", "", str(item.get("date") or ""))
+        return (item["priority"], -int(digits or "0"))
+
+    hits.sort(key=sort_key)
+    return hits[:limit]
+
+
+def signal_tightness(base: str, hits: list[dict[str, Any]], price: dict[str, Any] | None) -> str:
+    text = " ".join(hit.get("text", "") for hit in hits)
+    if any(word in text for word in ["断供", "紧缺", "库存低", "库存低位", "出口管制", "限制出口"]):
+        return "紧缺/供给扰动"
+    if any(word in text for word in ["涨价", "价格上行", "供需缺口"]):
+        return "价格偏强/偏紧"
+    if price and safe_float(price.get("change_pct")) >= 3:
+        return "价格明显上行"
+    return base
+
+
+def build_fermentation_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
+    ths = sources.get("同花顺热点")
+    limit_up = sources.get("涨停池")
+    tag_top = ths.data.get("tag_top", [])[:10] if ths and ths.ok else []
+    industry_top = limit_up.data.get("industry_top", [])[:8] if limit_up and limit_up.ok else []
+    one_word = limit_up.data.get("one_word_boards", [])[:20] if limit_up and limit_up.ok else []
+    metrics = [
+        {"label": "强势股", "value": ths.data.get("count", 0) if ths and ths.ok else "NA"},
+        {"label": "涨停股", "value": limit_up.data.get("count", 0) if limit_up and limit_up.ok else "NA"},
+        {"label": "一字板", "value": limit_up.data.get("one_word_count", 0) if limit_up and limit_up.ok else "NA"},
+    ]
+    return {
+        "type": "fermentation",
+        "title": "最强发酵方向",
+        "summary": "同花顺题材词频 + 涨停池行业集中度 + 一字板明细。",
+        "metrics": metrics,
+        "tags": [{"name": name, "count": count} for name, count in tag_top],
+        "industries": [{"name": name, "count": count} for name, count in industry_top],
+        "one_word_boards": one_word,
+        "items": [
+            f"高频题材：{'、'.join(f'{name}({count})' for name, count in tag_top[:6]) or '暂无'}",
+            f"一字板：{'、'.join(f'{x.get('name')}({x.get('code')})' for x in one_word[:8]) or '暂无'}",
+        ],
+    }
+
+
+def build_material_radar_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
+    material_source = sources.get("材料雷达") or sources.get("商品价格")
+    rows = material_source.data.get("items", []) if material_source and material_source.ok else []
+    materials = []
+    for row in rows:
+        hits = material_hits(row, sources, limit=6)
+        price = row.get("price")
+        inventory = row.get("inventory")
+        related = row.get("related_stocks") or []
+        materials.append(
+            {
+                "name": row.get("name"),
+                "category": row.get("category"),
+                "price": price,
+                "inventory": inventory,
+                "tightness": signal_tightness(row.get("base_tightness", ""), hits, price),
+                "expansion": row.get("expansion"),
+                "coverage": row.get("coverage"),
+                "news": hits[:3],
+                "related_stocks": related[:5],
+            }
+        )
+    order = {"紧缺/供给扰动": 0, "价格偏强/偏紧": 1, "价格明显上行": 2}
+    materials.sort(key=lambda item: order.get(item.get("tightness"), 3))
+    return {
+        "type": "material_radar",
+        "title": "热点上游材料雷达",
+        "summary": "价格走势、库存/仓单、紧缺程度、扩产难度、最新线索和相关 A 股。",
+        "materials": materials,
+        "items": [f"覆盖材料 {len(materials)} 个；无直连价格的材料以新闻/研报/题材线索展示。"],
+    }
+
+
+def build_material_news_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
+    material_source = sources.get("材料雷达") or sources.get("商品价格")
+    rows = material_source.data.get("items", []) if material_source and material_source.ok else MATERIAL_CONFIG
+    news_items = []
+    for row in rows:
+        for hit in material_hits(row, sources, limit=6):
+            if hit.get("signal") != "相关" or len(news_items) < 12:
+                news_items.append(hit)
+    def sort_key(item: dict[str, Any]) -> tuple[int, int]:
+        digits = re.sub(r"\D", "", str(item.get("date") or ""))
+        return (0 if item.get("signal") != "相关" else 1, -int(digits or "0"))
+
+    news_items.sort(key=sort_key)
+    return {
+        "type": "material_news",
+        "title": "材料突发消息",
+        "summary": "重点捕捉断供、涨价、出口限制、停产、检修和库存低位。",
+        "news": news_items[:24],
+        "items": [item.get("text", "") for item in news_items[:8]] or ["暂无材料突发线索。"],
+    }
+
+
+def build_futures_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
+    futures = sources.get("期指席位")
+    rows = []
+    if futures and futures.ok:
+        for row in futures.data.get("aggregate_rows", []):
+            rows.append(
+                {
+                    "group": row.get("group"),
+                    "long_value": row.get("long_value", 0),
+                    "long_chg": row.get("long_chg", 0),
+                    "short_value": row.get("short_value", 0),
+                    "short_chg": row.get("short_chg", 0),
+                    "net_value": row.get("net_value", 0),
+                    "net_chg": row.get("net_chg", 0),
+                    "direction": row.get("direction"),
+                }
+            )
+    return {
+        "type": "futures_summary",
+        "title": "期指重点席位多空",
+        "summary": f"中金所 IF/IC/IH/IM 重点席位汇总，日期 {futures.data.get('date') if futures and futures.ok else '暂无'}。",
+        "table": rows,
+        "items": [
+            f"{row['group']}：多{row['long_value']} / 空{row['short_value']} / 净{row['net_value']}"
+            for row in rows
+        ] or ["暂无期指席位数据。"],
+    }
+
+
+def build_reports_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
+    reports = sources.get("机构研报")
+    items = []
+    if reports and reports.ok:
+        items = reports.data.get("items", [])[:12]
+    return {
+        "type": "reports",
+        "title": "主题研报精华",
+        "summary": "保留日期、机构、观点、评级、行业、标题、简要和 PDF 链接。",
+        "reports": items,
+        "items": [f"{x.get('date')} / {x.get('org')} / {x.get('sentiment')} / {x.get('rating')} / {x.get('industry')}：{x.get('title')}" for x in items]
+        or ["暂无主题研报命中。"],
+    }
+
+
+def build_focus_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
+    groups = []
+    raw_items = build_focus_items(sources)
+    current = None
+    for item in raw_items:
+        if item.endswith("：") and not item.startswith("  "):
+            current = {"name": item[:-1], "items": []}
+            groups.append(current)
+        elif current is not None:
+            current["items"].append(item.strip())
+    return {
+        "type": "focus_groups",
+        "title": "重点公司/产业消息",
+        "summary": "宁德、英伟达、半导体上游材料三条固定关注线。",
+        "groups": groups,
+        "items": raw_items,
+    }
+
+
+def build_equity_map_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
+    watch = sources.get("产业链行情")
+    groups = []
+    if watch and watch.ok:
+        for theme, quotes in watch.data.items():
+            groups.append({"name": theme, "stocks": quotes[:8]})
+    return {
+        "type": "equity_map",
+        "title": "产业链 A股映射",
+        "summary": "按热点方向展示相关 A 股的涨跌幅、成交额、市值和量比。",
+        "groups": groups,
+        "items": [f"{g['name']}：{'、'.join(f'{x.get('name')} {x.get('change_pct')}%' for x in g['stocks'][:3])}" for g in groups]
+        or ["暂无产业链行情。"],
+    }
+
+
+def build_status_module(results: list[SourceResult]) -> dict[str, Any]:
+    statuses = [{"name": r.name, "ok": r.ok, "error": r.error, "elapsed_ms": r.elapsed_ms} for r in results]
+    return {
+        "type": "status",
+        "title": "数据源状态与口径",
+        "summary": "失败源会保留在报告中；材料无直连价格时使用新闻/研报/题材线索，不填虚假报价。",
+        "statuses": statuses,
+        "items": [
+            f"{'OK' if item['ok'] else 'FAIL'} {item['name']} ({item['elapsed_ms']}ms)"
+            + (f"：{item['error']}" if item.get("error") else "")
+            for item in statuses
+        ],
+    }
+
+
 def build_raw_digest(results: list[SourceResult]) -> str:
     sources = source_map(results)
     lines: list[str] = []
@@ -749,20 +1236,29 @@ def build_raw_digest(results: list[SourceResult]) -> str:
             f"重点机构合计 多{inst.get('long_value', 0)}/空{inst.get('short_value', 0)}/净{inst.get('net_value', 0)}。"
             f"中信分品种：{zhongxin_text or '未命中'}。"
         )
-    commodities = sources.get("商品价格")
+    commodities = sources.get("材料雷达") or sources.get("商品价格")
     if commodities and commodities.ok:
         parts = []
-        for item in commodities.data.get("items", []):
-            if item.get("status") == "ok":
-                parts.append(f"{item['name']} {item['price']} {item.get('unit') or ''} ({item.get('change_pct')}%)")
+        for item in commodities.data.get("items", [])[:8]:
+            price = item.get("price") or {}
+            if price:
+                parts.append(
+                    f"{item['name']} {price.get('price')} {price.get('unit') or ''} "
+                    f"({price.get('change_pct')}%, {price.get('trend')})"
+                )
             else:
-                parts.append(f"{item['name']}：{item.get('source')}")
-        lines.append("商品价格：" + "；".join(parts))
+                parts.append(f"{item['name']}：{item.get('coverage')}")
+        lines.append("材料雷达：" + "；".join(parts))
     news = sources.get("产业新闻")
     if news and news.ok:
         data = news.data
         sample = "；".join(item.get("text", "")[:80] for item in data.get("items", [])[:5] if item.get("text"))
         lines.append(f"产业新闻：主题命中 {data.get('count')} 条。样例：{sample}")
+    metal_news = sources.get("金属快讯")
+    if metal_news and metal_news.ok:
+        data = metal_news.data
+        sample = "；".join(item.get("text", "")[:80] for item in data.get("items", [])[:5] if item.get("text"))
+        lines.append(f"金属快讯：材料主题命中 {data.get('count')} 条。样例：{sample}")
     quotes = sources.get("产业链行情")
     if quotes and quotes.ok:
         parts = []
@@ -778,114 +1274,16 @@ def build_raw_digest(results: list[SourceResult]) -> str:
 
 def build_brief_sections(results: list[SourceResult], ai_summary: str | None, ai_error: str | None) -> list[dict[str, Any]]:
     sources = source_map(results)
-    sections: list[dict[str, Any]] = []
-    if ai_summary:
-        bullets = [line.strip(" -") for line in ai_summary.splitlines() if line.strip()]
-        sections.append({"title": "AI核心摘要", "items": bullets[:8]})
-        return sections
-
-    key_items = []
-    ths = sources.get("同花顺热点")
-    if ths and ths.ok:
-        tags = "、".join(f"{tag}({n})" for tag, n in ths.data.get("tag_top", [])[:6])
-        key_items.append(f"同花顺强势股 {ths.data.get('count')} 只；高频题材：{tags or '暂无'}")
-    limit_up = sources.get("涨停池")
-    if limit_up and limit_up.ok:
-        industries = "、".join(f"{name}({n})" for name, n in limit_up.data.get("industry_top", [])[:6])
-        one_word = "、".join(f"{x['name']}({x['code']})" for x in limit_up.data.get("one_word_boards", [])[:8])
-        key_items.append(
-            f"涨停 {limit_up.data.get('count')} 只，一字板 {limit_up.data.get('one_word_count', 0)} 只；"
-            f"集中行业：{industries or '暂无'}；一字板：{one_word or '暂无'}"
-        )
-    north = sources.get("北向资金")
-    if north and north.ok:
-        data = north.data
-        key_items.append(f"北向合计 {data.get('total_yi')} 亿，沪股通 {data.get('hgt_yi')} 亿，深股通 {data.get('sgt_yi')} 亿")
-    reports = sources.get("机构研报")
-    if reports and reports.ok:
-        key_items.append(f"主题研报命中 {reports.data.get('count')} 篇；观点分布 {reports.data.get('sentiment')}")
-    futures = sources.get("期指席位")
-    if futures and futures.ok:
-        aggregate = futures.data.get("aggregate") or {}
-        zx = aggregate.get("中信", {})
-        inst = aggregate.get("重点机构合计", {})
-        key_items.append(
-            f"期指 {futures.data.get('date')}：中信 多{zx.get('long_value', 0)}/空{zx.get('short_value', 0)}/净{zx.get('net_value', 0)}；"
-            f"重点机构 多{inst.get('long_value', 0)}/空{inst.get('short_value', 0)}/净{inst.get('net_value', 0)}"
-        )
-    if ai_error:
-        key_items.append(f"AI摘要未生成：{ai_error}")
-    sections.append({"title": "今日简报", "items": key_items or ["暂无可用摘要，请查看数据源状态。"]})
-
-    reports = sources.get("机构研报")
-    if reports and reports.ok:
-        report_items = []
-        for item in (reports.data.get("items") or [])[:10]:
-            meta = " / ".join(
-                part
-                for part in [
-                    item.get("date"),
-                    item.get("org"),
-                    item.get("sentiment"),
-                    item.get("rating"),
-                    item.get("industry"),
-                ]
-                if part
-            )
-            report_items.append(f"{meta}：{item.get('title')}")
-            if item.get("summary"):
-                report_items.append(f"  简要：{item.get('summary')}")
-            if item.get("pdf_url"):
-                report_items.append(f"  链接：{item.get('pdf_url')}")
-        sections.append({"title": "主题研报摘要", "items": report_items or ["暂无主题研报命中。"]})
-
-    futures = sources.get("期指席位")
-    if futures and futures.ok:
-        futures_items = []
-        summary = futures.data.get("party_summary") or []
-        preferred = [x for x in summary if "中信" in x.get("party", "")]
-        others = [x for x in summary if "中信" not in x.get("party", "")]
-        for item in (preferred + others)[:12]:
-            net = int(item.get("net_value") or 0)
-            net_chg = int(item.get("net_chg") or 0)
-            direction = "净多" if net > 0 else ("净空" if net < 0 else "持平")
-            futures_items.append(
-                f"{item.get('party')} {item.get('symbol')}："
-                f"多单 {item.get('long_value')}({item.get('long_chg'):+}) / "
-                f"空单 {item.get('short_value')}({item.get('short_chg'):+}) / "
-                f"{direction} {abs(net)}({net_chg:+})"
-            )
-        sections.append({"title": "期指重点席位多空", "items": futures_items or ["暂无重点席位明细。"]})
-
-    commodities = sources.get("商品价格")
-    if commodities and commodities.ok:
-        price_items = []
-        for item in commodities.data.get("items", []):
-            if item.get("status") == "ok":
-                price_items.append(
-                    f"{item.get('name')}：{item.get('price')} {item.get('unit') or ''}，"
-                    f"涨跌幅 {item.get('change_pct')}%，时间 {item.get('date')} {item.get('time')}"
-                )
-            else:
-                price_items.append(f"{item.get('name')}：{item.get('source')}")
-                for note in item.get("notes", [])[:3]:
-                    price_items.append(f"  线索：{note.get('date')} {note.get('org')} - {note.get('title')} {note.get('pdf_url') or ''}")
-        sections.append({"title": "碳酸锂/氦气价格", "items": price_items or ["暂无价格数据。"]})
-
-    sections.append({"title": "重点消息关注", "items": build_focus_items(sources)})
-
-    watch = sources.get("产业链行情")
-    if watch and watch.ok:
-        items = []
-        for theme, quotes in watch.data.items():
-            leaders = "、".join(f"{x['name']} {x['change_pct']}%" for x in quotes[:3])
-            items.append(f"{theme}：{leaders or '暂无行情'}")
-        sections.append({"title": "产业链观察", "items": items})
-
-    failed = [f"{r.name}: {r.error}" for r in results if not r.ok]
-    if failed:
-        sections.append({"title": "口径限制", "items": failed[:6]})
-    return sections
+    return [
+        build_fermentation_module(sources),
+        build_material_radar_module(sources),
+        build_material_news_module(sources),
+        build_futures_module(sources),
+        build_reports_module(sources),
+        build_focus_module(sources),
+        build_equity_map_module(sources),
+        build_status_module(results),
+    ]
 
 
 def deepseek_summary(
@@ -968,7 +1366,8 @@ def generate_report(
         ("同花顺热点", collect_ths_hot),
         ("北向资金", collect_northbound),
         ("涨停池", collect_limit_up),
-        ("商品价格", collect_commodity_prices),
+        ("材料雷达", collect_material_radar),
+        ("金属快讯", collect_metal_news),
         ("产业新闻", collect_news),
         ("机构研报", collect_reports),
         ("期指席位", collect_cffex_positions),

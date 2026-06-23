@@ -21,6 +21,8 @@ def main() -> None:
     shutil.copyfile(WEB_DIR / "static.html", SITE_DIR / "index.html")
     shutil.copyfile(WEB_DIR / "manifest.webmanifest", SITE_DIR / "manifest.webmanifest")
     shutil.copyfile(WEB_DIR / "sw.js", SITE_DIR / "sw.js")
+    shutil.copyfile(WEB_DIR / "styles.css", SITE_DIR / "styles.css")
+    shutil.copyfile(WEB_DIR / "render.js", SITE_DIR / "render.js")
     shutil.copyfile(LATEST_JSON, SITE_DIR / "latest.json")
     if LATEST_MD.exists():
         shutil.copyfile(LATEST_MD, SITE_DIR / "latest.md")

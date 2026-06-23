@@ -5,224 +5,72 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101820">
   <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
   <title>A股情报雷达</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f6f7f9;
-      --ink: #111827;
-      --muted: #5f6b7a;
-      --line: #dce2ea;
-      --panel: #ffffff;
-      --accent: #0f766e;
-      --bad: #b91c1c;
-      --good: #047857;
-      --warn: #b45309;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--ink);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
-      line-height: 1.55;
-    }
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 5;
-      background: rgba(246, 247, 249, .94);
-      backdrop-filter: blur(14px);
-      border-bottom: 1px solid var(--line);
-    }
-    .bar, main {
-      max-width: 920px;
-      margin: 0 auto;
-      padding: 14px 16px;
-    }
-    main {
-      display: grid;
-      gap: 14px;
-    }
-    h1 {
-      margin: 0;
-      font-size: 22px;
-      letter-spacing: 0;
-    }
-    h2 {
-      margin: 0 0 10px;
-      font-size: 17px;
-    }
-    h3 {
-      margin: 0 0 6px;
-      font-size: 15px;
-    }
-    .meta, .small {
-      color: var(--muted);
-      font-size: 13px;
-    }
-    section, details {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 14px;
-    }
-    .brief-list {
-      display: grid;
-      gap: 10px;
-    }
-    .brief-block {
-      border: 1px solid #e8edf3;
-      border-radius: 8px;
-      padding: 10px 12px;
-      background: #fbfcfd;
-    }
-    ul {
-      margin: 0;
-      padding-left: 18px;
-    }
-    li { margin: 4px 0; }
-    .digest {
-      white-space: pre-wrap;
-      font-size: 15px;
-    }
-    .settings {
-      display: grid;
-      gap: 8px;
-    }
-    input {
-      width: 100%;
-      min-height: 42px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 15px;
-    }
-    button {
-      border: 0;
-      border-radius: 8px;
-      background: var(--accent);
-      color: white;
-      font-size: 15px;
-      font-weight: 700;
-      padding: 11px 14px;
-      min-height: 44px;
-    }
-    button:disabled { opacity: .62; }
-    .source {
-      display: grid;
-      grid-template-columns: auto 1fr auto;
-      gap: 8px;
-      align-items: start;
-      border-bottom: 1px solid #edf1f5;
-      padding-bottom: 8px;
-    }
-    .source:last-child {
-      border-bottom: 0;
-      padding-bottom: 0;
-    }
-    .badge {
-      border-radius: 999px;
-      font-size: 12px;
-      padding: 2px 8px;
-      font-weight: 700;
-    }
-    .ok { background: #d1fae5; color: var(--good); }
-    .fail { background: #fee2e2; color: var(--bad); }
-    pre {
-      margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-    }
-  </style>
 </head>
 <body>
   <header>
     <div class="bar">
-      <h1>A股情报雷达</h1>
-      <div class="meta" id="meta">读取中...</div>
+      <div>
+        <h1>A股情报雷达</h1>
+        <div class="meta" id="meta">读取中...</div>
+      </div>
     </div>
   </header>
   <main>
     <section>
-      <h2>简洁报告</h2>
-      <div class="brief-list" id="briefList"></div>
+      <div class="section-head">
+        <div>
+          <h2>八模块情报舱</h2>
+          <p>发酵方向、材料雷达、突发消息、期指多空、研报、重点产业、A股映射和数据口径。</p>
+        </div>
+      </div>
+      <div class="module-list" id="briefList"></div>
     </section>
-    <section>
-      <h2>AI 投研摘要</h2>
+
+    <details>
+      <summary>AI 投研摘要</summary>
       <div class="digest" id="aiSummary">读取中...</div>
-    </section>
-    <section>
-      <h2>可选 API 设置</h2>
+    </details>
+
+    <details>
+      <summary>可选 API 设置</summary>
       <div class="settings">
         <div class="small">云端定时摘要优先使用 GitHub Secret 里的 DEEPSEEK_API_KEY。这里可选输入你自己的 key，对当前页面已有数据重新生成一版摘要。Key 只保存在当前浏览器。</div>
         <input id="apiKey" type="password" autocomplete="off" placeholder="DeepSeek API Key（可选）">
         <button id="resummarizeBtn" type="button">用页面输入的 API 重新摘要</button>
         <div class="small" id="apiStatus"></div>
       </div>
-    </section>
-    <section>
-      <h2>原始聚合摘要</h2>
+    </details>
+
+    <details>
+      <summary>原始聚合摘要</summary>
       <div class="digest" id="rawDigest"></div>
-    </section>
-    <section>
-      <h2>数据源状态</h2>
-      <div id="sourceStatus"></div>
-    </section>
+    </details>
+
     <details>
       <summary>查看结构化 JSON</summary>
       <pre id="jsonDump">{}</pre>
     </details>
   </main>
+  <script src="./render.js"></script>
   <script>
     let report = null;
     const meta = document.getElementById('meta');
     const briefList = document.getElementById('briefList');
     const aiSummary = document.getElementById('aiSummary');
     const rawDigest = document.getElementById('rawDigest');
-    const sourceStatus = document.getElementById('sourceStatus');
     const jsonDump = document.getElementById('jsonDump');
     const apiKey = document.getElementById('apiKey');
     const apiStatus = document.getElementById('apiStatus');
     const resummarizeBtn = document.getElementById('resummarizeBtn');
 
-    function escapeHtml(text) {
-      return String(text || '').replace(/[&<>"']/g, ch => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-      })[ch]);
-    }
-
-    function linkify(text) {
-      return escapeHtml(text).replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
-    }
-
-    function renderBrief(sections) {
-      if (!sections || !sections.length) {
-        briefList.innerHTML = '<div class="digest">暂无简报。</div>';
-        return;
-      }
-      briefList.innerHTML = sections.map(section => `
-        <div class="brief-block">
-          <h3>${escapeHtml(section.title)}</h3>
-          <ul>${(section.items || []).map(item => `<li>${linkify(item)}</li>`).join('')}</ul>
-        </div>
-      `).join('');
-    }
-
     function render(data) {
       report = data;
       meta.textContent = `${data.date || ''} ${data.generated_at || ''} · ${data.ai_summary ? 'AI摘要已生成' : 'AI摘要未生成'}`;
-      renderBrief(data.brief_sections);
+      IntelUI.renderModules(data.brief_sections, briefList);
       aiSummary.textContent = data.ai_summary || `AI 摘要未生成：${data.ai_error || '未配置或调用失败'}`;
       rawDigest.textContent = data.raw_digest || '暂无原始摘要。';
-      sourceStatus.innerHTML = (data.source_status || []).map(s => `
-        <div class="source">
-          <span class="badge ${s.ok ? 'ok' : 'fail'}">${s.ok ? 'OK' : 'FAIL'}</span>
-          <div><strong>${escapeHtml(s.name)}</strong>${s.error ? `<div class="small">${escapeHtml(s.error)}</div>` : ''}</div>
-          <span class="small">${s.elapsed_ms}ms</span>
-        </div>
-      `).join('');
       jsonDump.textContent = JSON.stringify(data.sources || data, null, 2);
     }
 
@@ -245,7 +93,7 @@
         const payload = {
           model: 'deepseek-v4-pro',
           messages: [
-            { role: 'system', content: '你是A股投研情报助手。只基于用户提供的数据做摘要，不编造事实。输出中文，简洁精准。' },
+            { role: 'system', content: '你是A股投研情报助手。只基于用户提供的数据做摘要，不编造事实。输出中文，聚焦发酵方向、材料、期指和风险。' },
             { role: 'user', content: `请整理为投研摘要：\n${report.raw_digest}\n\nJSON:\n${JSON.stringify(report.sources).slice(0, 40000)}` }
           ],
           temperature: 0.2,

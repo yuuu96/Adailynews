@@ -80,11 +80,16 @@ class IntelHandler(BaseHTTPRequestHandler):
         if parsed.path == "/":
             self.send_file(WEB_DIR / "index.html", "text/html; charset=utf-8")
             return
-        if parsed.path == "/manifest.webmanifest":
-            self.send_file(WEB_DIR / "manifest.webmanifest", "application/manifest+json")
-            return
-        if parsed.path == "/sw.js":
-            self.send_file(WEB_DIR / "sw.js", "application/javascript; charset=utf-8")
+        static_path = (WEB_DIR / parsed.path.lstrip("/")).resolve()
+        if WEB_DIR in static_path.parents and static_path.exists() and static_path.is_file():
+            content_type = None
+            if static_path.name == "manifest.webmanifest":
+                content_type = "application/manifest+json"
+            elif static_path.suffix == ".js":
+                content_type = "application/javascript; charset=utf-8"
+            elif static_path.suffix == ".css":
+                content_type = "text/css; charset=utf-8"
+            self.send_file(static_path, content_type)
             return
         self.send_error(404, "Not found")
 
