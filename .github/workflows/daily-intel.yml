@@ -55,6 +55,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Configure Pages
+        if: steps.timecheck.outputs.should_run == 'true'
+        uses: actions/configure-pages@v5
+
       - name: Install dependencies
         if: steps.timecheck.outputs.should_run == 'true'
         run: |
