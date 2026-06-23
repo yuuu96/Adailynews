@@ -40,6 +40,9 @@ LATEST_MD = REPORT_DIR / "latest.md"
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 THEME_KEYWORDS = [
+    "宁德",
+    "宁德时代",
+    "CATL",
     "英伟达",
     "NVIDIA",
     "GB200",
@@ -65,12 +68,15 @@ THEME_KEYWORDS = [
     "锂矿",
     "碳酸锂",
     "锂电",
+    "氦气",
+    "氦",
 ]
 
 SOURCE_TIMEOUTS = {
     "同花顺热点": 15,
     "北向资金": 15,
     "涨停池": 25,
+    "商品价格": 18,
     "产业新闻": 25,
     "机构研报": 25,
     "期指席位": 30,
@@ -84,6 +90,12 @@ WATCHLIST = {
     "半导体材料": ["688300", "300054", "688126", "603650", "002409", "688146", "600703"],
     "储能锂矿": ["300750", "002466", "002460", "002738", "002756", "300274", "002812"],
     "电网电力": ["601179", "600550", "600973", "002498", "002560", "600236", "000899"],
+}
+
+FOCUS_TOPICS = {
+    "宁德相关": ["宁德", "宁德时代", "CATL", "电池", "储能", "麒麟电池", "神行电池"],
+    "英伟达相关": ["英伟达", "NVIDIA", "GB200", "GB300", "Rubin", "Blackwell", "NVL", "CUDA"],
+    "半导体上游材料": ["半导体", "光刻胶", "电子特气", "氦气", "氦", "硅片", "CMP", "ABF", "InP", "GaAs", "前驱体"],
 }
 
 POSITIVE_WORDS = [
@@ -306,27 +318,42 @@ def collect_limit_up() -> dict[str, Any]:
     rows = jsonable(df) or []
     industry_counter: Counter[str] = Counter()
     cleaned = []
+    one_word_boards = []
     for row in rows:
         name = row.get("名称")
         if not name or safe_float(row.get("最新价")) <= 0:
             continue
         industry = row.get("所属行业") or "未分类"
+        first_time = str(row.get("首次封板时间") or "")
+        last_time = str(row.get("最后封板时间") or "")
+        break_count = int(safe_float(row.get("炸板次数"), 0))
+        is_one_word = first_time == "092500" and last_time == "092500" and break_count == 0
         industry_counter[industry] += 1
-        cleaned.append(
-            {
-                "code": row.get("代码"),
-                "name": name,
-                "change_pct": safe_float(row.get("涨跌幅")),
-                "latest": safe_float(row.get("最新价")),
-                "amount_yi": round(safe_float(row.get("成交额")) / 1e8, 2),
-                "board_count": row.get("连板数"),
-                "industry": industry,
-                "first_time": row.get("首次封板时间"),
-                "break_count": row.get("炸板次数"),
-            }
-        )
+        item = {
+            "code": row.get("代码"),
+            "name": name,
+            "change_pct": safe_float(row.get("涨跌幅")),
+            "latest": safe_float(row.get("最新价")),
+            "amount_yi": round(safe_float(row.get("成交额")) / 1e8, 2),
+            "board_count": row.get("连板数"),
+            "industry": industry,
+            "first_time": first_time,
+            "last_time": last_time,
+            "break_count": break_count,
+            "is_one_word_board": is_one_word,
+        }
+        cleaned.append(item)
+        if is_one_word:
+            one_word_boards.append(item)
     cleaned.sort(key=lambda item: item.get("amount_yi", 0), reverse=True)
-    return {"date": d, "count": len(cleaned), "industry_top": industry_counter.most_common(15), "top": cleaned[:40]}
+    return {
+        "date": d,
+        "count": len(cleaned),
+        "industry_top": industry_counter.most_common(15),
+        "one_word_count": len(one_word_boards),
+        "one_word_boards": one_word_boards[:40],
+        "top": cleaned[:40],
+    }
 
 
 def text_from_record(record: dict[str, Any]) -> str:
@@ -342,6 +369,7 @@ def collect_news() -> dict[str, Any]:
     if ak is None:
         raise RuntimeError("akshare is not installed")
     items = []
+    focus: dict[str, list[dict[str, Any]]] = {topic: [] for topic in FOCUS_TOPICS}
     source_defs = [
         ("财联社重点", lambda: ak.stock_info_global_cls(symbol="重点")),
         ("财联社全部", lambda: ak.stock_info_global_cls(symbol="全部")),
@@ -353,10 +381,19 @@ def collect_news() -> dict[str, Any]:
             for row in (jsonable(df) or [])[:120]:
                 text = text_from_record(row)
                 if is_theme_hit(text):
-                    items.append({"source": source_name, "text": text[:500], "raw": row})
+                    item = {"source": source_name, "text": text[:500], "raw": row}
+                    items.append(item)
+                    upper = text.upper()
+                    for topic, keywords in FOCUS_TOPICS.items():
+                        if any(keyword.upper() in upper for keyword in keywords):
+                            focus[topic].append(item)
         except Exception as exc:
             items.append({"source": source_name, "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
-    return {"count": len([item for item in items if "text" in item]), "items": items[:80]}
+    return {
+        "count": len([item for item in items if "text" in item]),
+        "items": items[:80],
+        "focus": {topic: values[:15] for topic, values in focus.items()},
+    }
 
 
 def classify_sentiment(text: str) -> str:
@@ -367,6 +404,21 @@ def classify_sentiment(text: str) -> str:
     if neg > pos:
         return "偏空"
     return "中性"
+
+
+def concise_report_summary(title: str, summary: str | None = None) -> str:
+    """Use provider summary when available; otherwise derive a short title-based point."""
+    text = re.sub(r"\s+", " ", str(summary or "")).strip()
+    if text:
+        return text[:220]
+    title = re.sub(r"\s+", " ", str(title or "")).strip()
+    if not title:
+        return ""
+    for sep in ["：", ":", "——", "--", "—"]:
+        if sep in title:
+            title = title.split(sep, 1)[1].strip() or title
+            break
+    return f"标题要点：{title[:180]}"
 
 
 def collect_reports() -> dict[str, Any]:
@@ -407,12 +459,62 @@ def collect_reports() -> dict[str, Any]:
                 "date": (row.get("publishDate") or "")[:10],
                 "org": row.get("orgSName"),
                 "title": title,
+                "summary": concise_report_summary(title, summary),
                 "industry": row.get("indvInduName"),
                 "rating": row.get("emRatingName"),
                 "sentiment": sentiment,
+                "info_code": row.get("infoCode"),
+                "pdf_url": f"https://pdf.dfcfw.com/pdf/H3_{row.get('infoCode')}_1.pdf" if row.get("infoCode") else None,
             }
         )
     return {"count": len(hits), "sentiment": dict(sentiment_counter), "items": hits[:50]}
+
+
+def collect_commodity_prices() -> dict[str, Any]:
+    if ak is None:
+        raise RuntimeError("akshare is not installed")
+    prices = []
+    try:
+        df = ak.futures_zh_realtime(symbol="碳酸锂")
+        rows = jsonable(df) or []
+        continuous = next((row for row in rows if str(row.get("symbol")) == "LC0"), rows[0] if rows else None)
+        if continuous:
+            prices.append(
+                {
+                    "name": "碳酸锂期货连续",
+                    "symbol": continuous.get("symbol"),
+                    "price": safe_float(continuous.get("trade")),
+                    "unit": "元/吨",
+                    "change_pct": round(safe_float(continuous.get("changepercent")) * 100, 2),
+                    "time": continuous.get("ticktime"),
+                    "date": continuous.get("tradedate"),
+                    "source": "akshare.futures_zh_realtime(碳酸锂)",
+                    "status": "ok",
+                }
+            )
+    except Exception as exc:
+        prices.append({"name": "碳酸锂期货连续", "status": "fail", "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
+
+    helium_notes = []
+    try:
+        report_data = collect_reports()
+        for item in report_data.get("items", []):
+            text = f"{item.get('title')} {item.get('summary')}"
+            if "氦" in text:
+                helium_notes.append(item)
+    except Exception:
+        helium_notes = []
+    prices.append(
+        {
+            "name": "氦气",
+            "status": "no_realtime_source",
+            "price": None,
+            "unit": None,
+            "source": "暂无稳定直连实时报价；展示氦气相关研报/消息线索",
+            "notes": helium_notes[:8],
+        }
+    )
+    return {"items": prices}
 
 
 def detect_columns(columns: list[str], candidates: list[str]) -> str | None:
@@ -512,11 +614,91 @@ def collect_cffex_positions() -> dict[str, Any]:
         item["net_chg"] = item["long_chg"] - item["short_chg"]
         summary_rows.append(item)
     summary_rows.sort(key=lambda x: (0 if "中信" in x["party"] else 1, x["symbol"], -abs(x["net_value"])))
-    return {"date": query_date, "count": len(normalized), "party_summary": summary_rows, "items": normalized}
+    aggregate = {
+        "中信": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
+        "重点机构合计": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
+    }
+    for item in summary_rows:
+        target = "中信" if "中信" in item["party"] else "重点机构合计"
+        for field in ["long_value", "long_chg", "short_value", "short_chg"]:
+            aggregate[target][field] += int(item.get(field) or 0)
+        if target != "重点机构合计":
+            for field in ["long_value", "long_chg", "short_value", "short_chg"]:
+                aggregate["重点机构合计"][field] += int(item.get(field) or 0)
+    for item in aggregate.values():
+        item["net_value"] = item["long_value"] - item["short_value"]
+        item["net_chg"] = item["long_chg"] - item["short_chg"]
+    return {"date": query_date, "count": len(normalized), "aggregate": aggregate, "party_summary": summary_rows, "items": normalized}
 
 
 def source_map(results: list[SourceResult]) -> dict[str, SourceResult]:
     return {result.name: result for result in results}
+
+
+def build_focus_items(sources: dict[str, SourceResult]) -> list[str]:
+    focus: dict[str, list[str]] = {topic: [] for topic in FOCUS_TOPICS}
+
+    def add(topic: str, text: str) -> None:
+        text = re.sub(r"\s+", " ", str(text or "")).strip()
+        if text and text not in focus[topic]:
+            focus[topic].append(text[:260])
+
+    news = sources.get("产业新闻")
+    if news and news.ok:
+        for topic, values in (news.data.get("focus") or {}).items():
+            for item in values[:6]:
+                add(topic, f"{item.get('source')}：{item.get('text')}")
+
+    reports = sources.get("机构研报")
+    if reports and reports.ok:
+        for item in (reports.data.get("items") or [])[:30]:
+            text = f"{item.get('title')} {item.get('summary')}"
+            upper = text.upper()
+            for topic, keywords in FOCUS_TOPICS.items():
+                if any(keyword.upper() in upper for keyword in keywords):
+                    add(topic, f"研报 {item.get('date')} {item.get('org') or ''}：{item.get('title')} {item.get('pdf_url') or ''}")
+
+    ths = sources.get("同花顺热点")
+    if ths and ths.ok:
+        for item in (ths.data.get("top") or [])[:80]:
+            text = f"{item.get('name')}({item.get('code')}) {item.get('reason')}"
+            upper = text.upper()
+            for topic, keywords in FOCUS_TOPICS.items():
+                if any(keyword.upper() in upper for keyword in keywords):
+                    add(topic, f"强势股 {text}")
+
+    commodities = sources.get("商品价格")
+    if commodities and commodities.ok:
+        for item in commodities.data.get("items", []):
+            for note in item.get("notes", [])[:5]:
+                text = f"{note.get('title')} {note.get('summary')}"
+                upper = text.upper()
+                for topic, keywords in FOCUS_TOPICS.items():
+                    if any(keyword.upper() in upper for keyword in keywords):
+                        add(topic, f"价格线索 {note.get('date')} {note.get('org') or ''}：{note.get('title')} {note.get('pdf_url') or ''}")
+
+    watch = sources.get("产业链行情")
+    if watch and watch.ok:
+        mapping = {
+            "宁德相关": ["储能锂矿"],
+            "英伟达相关": ["英伟达/AI算力"],
+            "半导体上游材料": ["半导体材料"],
+        }
+        for topic, themes in mapping.items():
+            for theme in themes:
+                quotes = watch.data.get(theme) or []
+                if quotes:
+                    leaders = "、".join(f"{x['name']} {x['change_pct']}%" for x in quotes[:4])
+                    add(topic, f"产业链行情 {theme}：{leaders}")
+
+    items: list[str] = []
+    for topic, values in focus.items():
+        items.append(f"{topic}：")
+        if values:
+            items.extend(f"  {value}" for value in values[:6])
+        else:
+            items.append("  暂无命中")
+    return items
 
 
 def build_raw_digest(results: list[SourceResult]) -> str:
@@ -531,7 +713,11 @@ def build_raw_digest(results: list[SourceResult]) -> str:
     if limit_up and limit_up.ok:
         data = limit_up.data
         industries = "、".join(f"{name}({n})" for name, n in data.get("industry_top", [])[:8])
-        lines.append(f"涨停池：涨停 {data.get('count')} 只，行业集中：{industries or '无'}。")
+        one_word = "、".join(f"{x['name']}({x['code']})" for x in data.get("one_word_boards", [])[:8])
+        lines.append(
+            f"涨停池：涨停 {data.get('count')} 只，一字板 {data.get('one_word_count', 0)} 只，"
+            f"行业集中：{industries or '无'}。一字板样例：{one_word or '无'}。"
+        )
     north = sources.get("北向资金")
     if north and north.ok:
         data = north.data
@@ -545,6 +731,7 @@ def build_raw_digest(results: list[SourceResult]) -> str:
     futures = sources.get("期指席位")
     if futures and futures.ok:
         data = futures.data
+        aggregate = data.get("aggregate") or {}
         zhongxin = [
             x
             for x in data.get("party_summary", [])
@@ -554,7 +741,23 @@ def build_raw_digest(results: list[SourceResult]) -> str:
             f"{x['symbol']} 多{x['long_value']}/空{x['short_value']}/净{x['net_value']}"
             for x in zhongxin
         )
-        lines.append(f"期指席位：{data.get('date')} 命中重点席位 {data.get('count')} 条。中信：{zhongxin_text or '未命中'}。")
+        zx = aggregate.get("中信", {})
+        inst = aggregate.get("重点机构合计", {})
+        lines.append(
+            f"期指席位：{data.get('date')} 命中重点席位 {data.get('count')} 条。"
+            f"中信合计 多{zx.get('long_value', 0)}/空{zx.get('short_value', 0)}/净{zx.get('net_value', 0)}；"
+            f"重点机构合计 多{inst.get('long_value', 0)}/空{inst.get('short_value', 0)}/净{inst.get('net_value', 0)}。"
+            f"中信分品种：{zhongxin_text or '未命中'}。"
+        )
+    commodities = sources.get("商品价格")
+    if commodities and commodities.ok:
+        parts = []
+        for item in commodities.data.get("items", []):
+            if item.get("status") == "ok":
+                parts.append(f"{item['name']} {item['price']} {item.get('unit') or ''} ({item.get('change_pct')}%)")
+            else:
+                parts.append(f"{item['name']}：{item.get('source')}")
+        lines.append("商品价格：" + "；".join(parts))
     news = sources.get("产业新闻")
     if news and news.ok:
         data = news.data
@@ -589,7 +792,11 @@ def build_brief_sections(results: list[SourceResult], ai_summary: str | None, ai
     limit_up = sources.get("涨停池")
     if limit_up and limit_up.ok:
         industries = "、".join(f"{name}({n})" for name, n in limit_up.data.get("industry_top", [])[:6])
-        key_items.append(f"涨停 {limit_up.data.get('count')} 只；集中行业：{industries or '暂无'}")
+        one_word = "、".join(f"{x['name']}({x['code']})" for x in limit_up.data.get("one_word_boards", [])[:8])
+        key_items.append(
+            f"涨停 {limit_up.data.get('count')} 只，一字板 {limit_up.data.get('one_word_count', 0)} 只；"
+            f"集中行业：{industries or '暂无'}；一字板：{one_word or '暂无'}"
+        )
     north = sources.get("北向资金")
     if north and north.ok:
         data = north.data
@@ -599,7 +806,13 @@ def build_brief_sections(results: list[SourceResult], ai_summary: str | None, ai
         key_items.append(f"主题研报命中 {reports.data.get('count')} 篇；观点分布 {reports.data.get('sentiment')}")
     futures = sources.get("期指席位")
     if futures and futures.ok:
-        key_items.append(f"期指重点席位命中 {futures.data.get('count')} 条，日期 {futures.data.get('date')}")
+        aggregate = futures.data.get("aggregate") or {}
+        zx = aggregate.get("中信", {})
+        inst = aggregate.get("重点机构合计", {})
+        key_items.append(
+            f"期指 {futures.data.get('date')}：中信 多{zx.get('long_value', 0)}/空{zx.get('short_value', 0)}/净{zx.get('net_value', 0)}；"
+            f"重点机构 多{inst.get('long_value', 0)}/空{inst.get('short_value', 0)}/净{inst.get('net_value', 0)}"
+        )
     if ai_error:
         key_items.append(f"AI摘要未生成：{ai_error}")
     sections.append({"title": "今日简报", "items": key_items or ["暂无可用摘要，请查看数据源状态。"]})
@@ -620,7 +833,11 @@ def build_brief_sections(results: list[SourceResult], ai_summary: str | None, ai
                 if part
             )
             report_items.append(f"{meta}：{item.get('title')}")
-        sections.append({"title": "主题研报精华", "items": report_items or ["暂无主题研报命中。"]})
+            if item.get("summary"):
+                report_items.append(f"  简要：{item.get('summary')}")
+            if item.get("pdf_url"):
+                report_items.append(f"  链接：{item.get('pdf_url')}")
+        sections.append({"title": "主题研报摘要", "items": report_items or ["暂无主题研报命中。"]})
 
     futures = sources.get("期指席位")
     if futures and futures.ok:
@@ -639,6 +856,23 @@ def build_brief_sections(results: list[SourceResult], ai_summary: str | None, ai
                 f"{direction} {abs(net)}({net_chg:+})"
             )
         sections.append({"title": "期指重点席位多空", "items": futures_items or ["暂无重点席位明细。"]})
+
+    commodities = sources.get("商品价格")
+    if commodities and commodities.ok:
+        price_items = []
+        for item in commodities.data.get("items", []):
+            if item.get("status") == "ok":
+                price_items.append(
+                    f"{item.get('name')}：{item.get('price')} {item.get('unit') or ''}，"
+                    f"涨跌幅 {item.get('change_pct')}%，时间 {item.get('date')} {item.get('time')}"
+                )
+            else:
+                price_items.append(f"{item.get('name')}：{item.get('source')}")
+                for note in item.get("notes", [])[:3]:
+                    price_items.append(f"  线索：{note.get('date')} {note.get('org')} - {note.get('title')} {note.get('pdf_url') or ''}")
+        sections.append({"title": "碳酸锂/氦气价格", "items": price_items or ["暂无价格数据。"]})
+
+    sections.append({"title": "重点消息关注", "items": build_focus_items(sources)})
 
     watch = sources.get("产业链行情")
     if watch and watch.ok:
@@ -734,6 +968,7 @@ def generate_report(
         ("同花顺热点", collect_ths_hot),
         ("北向资金", collect_northbound),
         ("涨停池", collect_limit_up),
+        ("商品价格", collect_commodity_prices),
         ("产业新闻", collect_news),
         ("机构研报", collect_reports),
         ("期指席位", collect_cffex_positions),

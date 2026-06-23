@@ -193,6 +193,10 @@
       })[ch]);
     }
 
+    function linkify(text) {
+      return escapeHtml(text).replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+    }
+
     function renderBrief(sections) {
       if (!sections || !sections.length) {
         briefList.innerHTML = '<div class="digest">暂无简报。</div>';
@@ -201,7 +205,7 @@
       briefList.innerHTML = sections.map(section => `
         <div class="brief-block">
           <h3>${escapeHtml(section.title)}</h3>
-          <ul>${(section.items || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+          <ul>${(section.items || []).map(item => `<li>${linkify(item)}</li>`).join('')}</ul>
         </div>
       `).join('');
     }
