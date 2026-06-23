@@ -1034,8 +1034,8 @@ def build_fermentation_module(sources: dict[str, SourceResult]) -> dict[str, Any
         "industries": [{"name": name, "count": count} for name, count in industry_top],
         "one_word_boards": one_word,
         "items": [
-            f"高频题材：{'、'.join(f'{name}({count})' for name, count in tag_top[:6]) or '暂无'}",
-            f"一字板：{'、'.join(f'{x.get('name')}({x.get('code')})' for x in one_word[:8]) or '暂无'}",
+            f"高频题材：{'、'.join(name + '(' + str(count) + ')' for name, count in tag_top[:6]) or '暂无'}",
+            f"一字板：{'、'.join(x.get('name') + '(' + x.get('code') + ')' for x in one_word[:8]) or '暂无'}",
         ],
     }
 
@@ -1169,7 +1169,7 @@ def build_equity_map_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
         "title": "产业链 A股映射",
         "summary": "按热点方向展示相关 A 股的涨跌幅、成交额、市值和量比。",
         "groups": groups,
-        "items": [f"{g['name']}：{'、'.join(f'{x.get('name')} {x.get('change_pct')}%' for x in g['stocks'][:3])}" for g in groups]
+        "items": [f"{g['name']}：{'、'.join(x.get('name') + ' ' + str(x.get('change_pct')) + '%' for x in g['stocks'][:3])}" for g in groups]
         or ["暂无产业链行情。"],
     }
 
