@@ -96,7 +96,9 @@ SOURCE_TIMEOUTS = {
     "涨停池": 25,
     "材料雷达": 24,
     "金属快讯": 15,
-    "产业新闻": 25,
+    "财联社快讯": 9,
+    "产业新闻": 15,
+    "重点公告": 18,
     "机构研报": 25,
     "期指席位": 30,
     "产业链行情": 15,
@@ -115,6 +117,48 @@ FOCUS_TOPICS = {
     "宁德相关": ["宁德", "宁德时代", "CATL", "电池", "储能", "麒麟电池", "神行电池"],
     "英伟达相关": ["英伟达", "NVIDIA", "GB200", "GB300", "Rubin", "Blackwell", "NVL", "CUDA"],
     "半导体上游材料": ["半导体", "光刻胶", "电子特气", "氦气", "氦", "硅片", "CMP", "ABF", "InP", "GaAs", "前驱体"],
+    "亿纬锂能": ["亿纬锂能", "半年报", "业绩预告", "电池", "储能"],
+}
+
+FOCUS_EVENT_GROUPS = {
+    "宁德时代": ["宁德", "宁德时代", "CATL", "枧下窝", "锂矿", "复产", "储能", "电池"],
+    "英伟达": ["NVIDIA", "英伟达", "Rubin", "45摄氏度", "液冷", "GB200", "GB300", "Blackwell"],
+    "半导体上游材料": ["日本酸素", "氦气", "氦", "光刻胶", "电子特气", "断供", "涨价", "六氟化钨"],
+    "亿纬锂能": ["亿纬锂能", "半年报", "业绩预告", "电池", "储能"],
+}
+
+FOCUS_EVENT_ANCHORS = {
+    "宁德时代": ["宁德", "宁德时代", "CATL", "枧下窝"],
+    "英伟达": ["NVIDIA", "英伟达", "Rubin", "GB200", "GB300", "Blackwell"],
+    "半导体上游材料": ["日本酸素", "氦气", "氦", "光刻胶", "电子特气", "六氟化钨"],
+    "亿纬锂能": ["亿纬", "亿纬锂能", "EVE"],
+}
+
+FOREIGN_ORG_KEYWORDS = [
+    "高盛",
+    "Goldman",
+    "摩根士丹利",
+    "Morgan Stanley",
+    "摩根大通",
+    "JPMorgan",
+    "JP Morgan",
+    "瑞银",
+    "UBS",
+    "花旗",
+    "Citi",
+    "Citigroup",
+    "野村",
+    "Nomura",
+    "麦格理",
+    "Macquarie",
+    "美银",
+    "BofA",
+    "Bank of America",
+]
+
+FOCUS_STOCKS = {
+    "300750": "宁德时代",
+    "300014": "亿纬锂能",
 }
 
 MATERIAL_SIGNAL_WORDS = [
@@ -534,27 +578,126 @@ def is_theme_hit(text: str) -> bool:
     return any(keyword.upper() in text_upper for keyword in THEME_KEYWORDS)
 
 
+def is_keyword_hit(text: str, keywords: list[str]) -> bool:
+    upper = str(text or "").upper()
+    return any(str(keyword).upper() in upper for keyword in keywords)
+
+
+def first_value(record: dict[str, Any], candidates: list[str]) -> Any:
+    for candidate in candidates:
+        for key, value in record.items():
+            if candidate.lower() in str(key).lower() and value not in (None, ""):
+                return value
+    return None
+
+
+def parse_datetime_value(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    text = str(value).strip()
+    if not text:
+        return None
+    text = text.replace("T", " ").replace("Z", "")
+    text = re.sub(r"\+\d{2}:\d{2}$", "", text)
+    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y-%m-%d", "%Y/%m/%d", "%Y%m%d"]:
+        try:
+            return datetime.strptime(text[: len(datetime.now().strftime(fmt))], fmt)
+        except Exception:
+            pass
+    match = re.search(r"(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})", text)
+    if match:
+        year, month, day = (int(x) for x in match.groups())
+        return datetime(year, month, day)
+    return None
+
+
+def is_recent_time(value: Any, hours: int = 48) -> bool:
+    dt = parse_datetime_value(value)
+    if dt is None:
+        return False
+    return dt >= datetime.now() - timedelta(hours=hours)
+
+
+def normalize_news_item(source: str, row: dict[str, Any]) -> dict[str, Any]:
+    title = first_value(row, ["标题", "title", "新闻标题"]) or ""
+    content = first_value(row, ["内容", "摘要", "新闻内容", "content", "summary"]) or ""
+    time_value = first_value(row, ["发布时间", "发布日期", "时间", "date", "time"])
+    link = first_value(row, ["链接", "新闻链接", "url", "link"])
+    text = " ".join(str(v) for v in [title, content] if v)
+    if not text:
+        text = text_from_record(row)
+    return {
+        "source": source,
+        "title": str(title or text)[:180],
+        "content": str(content or "")[:500],
+        "text": str(text or "")[:700],
+        "time": str(time_value or ""),
+        "link": str(link or "") or None,
+        "raw": row,
+    }
+
+
+def news_sort_key(item: dict[str, Any]) -> int:
+    dt = parse_datetime_value(item.get("time") or item.get("date"))
+    return int(dt.timestamp()) if dt else 0
+
+
+def is_foreign_org_hit(text: str) -> bool:
+    return is_keyword_hit(text, FOREIGN_ORG_KEYWORDS)
+
+
+def is_focus_event_hit(group: str, text: str) -> bool:
+    anchors = FOCUS_EVENT_ANCHORS.get(group, [])
+    keywords = FOCUS_EVENT_GROUPS.get(group, [])
+    if not is_keyword_hit(text, anchors):
+        return False
+    return is_keyword_hit(text, keywords)
+
+
 def collect_news() -> dict[str, Any]:
     if ak is None:
         raise RuntimeError("akshare is not installed")
     items = []
     focus: dict[str, list[dict[str, Any]]] = {topic: [] for topic in FOCUS_TOPICS}
-    source_defs = [
+    try:
+        df = ak.stock_info_global_em()
+        for row in (jsonable(df) or [])[:160]:
+            item = normalize_news_item("东财快讯", row)
+            if is_theme_hit(item["text"]) or is_foreign_org_hit(item["text"]) or any(is_keyword_hit(item["text"], keywords) for keywords in FOCUS_EVENT_GROUPS.values()):
+                items.append(item)
+                for topic, keywords in FOCUS_TOPICS.items():
+                    if is_keyword_hit(item["text"], keywords):
+                        focus[topic].append(item)
+    except Exception as exc:
+        items.append({"source": "东财快讯", "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
+    return {
+        "count": len([item for item in items if "text" in item]),
+        "items": items[:80],
+        "focus": {topic: values[:15] for topic, values in focus.items()},
+    }
+
+
+def collect_cls_news() -> dict[str, Any]:
+    if ak is None:
+        raise RuntimeError("akshare is not installed")
+    items = []
+    focus: dict[str, list[dict[str, Any]]] = {topic: [] for topic in FOCUS_TOPICS}
+    for source_name, loader in [
         ("财联社重点", lambda: ak.stock_info_global_cls(symbol="重点")),
         ("财联社全部", lambda: ak.stock_info_global_cls(symbol="全部")),
-        ("东财快讯", ak.stock_info_global_em),
-    ]
-    for source_name, loader in source_defs:
+    ]:
         try:
             df = loader()
             for row in (jsonable(df) or [])[:120]:
-                text = text_from_record(row)
-                if is_theme_hit(text):
-                    item = {"source": source_name, "text": text[:500], "raw": row}
+                item = normalize_news_item(source_name, row)
+                if is_theme_hit(item["text"]) or is_foreign_org_hit(item["text"]) or any(is_keyword_hit(item["text"], keywords) for keywords in FOCUS_EVENT_GROUPS.values()):
                     items.append(item)
-                    upper = text.upper()
                     for topic, keywords in FOCUS_TOPICS.items():
-                        if any(keyword.upper() in upper for keyword in keywords):
+                        if is_keyword_hit(item["text"], keywords):
                             focus[topic].append(item)
         except Exception as exc:
             items.append({"source": source_name, "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
@@ -577,10 +720,47 @@ def collect_metal_news() -> dict[str, Any]:
         rows = jsonable(df) or []
     items = []
     for row in rows[:180]:
-        text = text_from_record(row)
-        if is_theme_hit(text):
-            items.append({"source": "上海金属网", "text": text[:500], "raw": row})
+        item = normalize_news_item("上海金属网", row)
+        if is_theme_hit(item["text"]):
+            items.append(item)
     return {"count": len(items), "items": items[:80]}
+
+
+def cninfo_market_for_code(code: str) -> str:
+    if code.startswith("6"):
+        return "沪市"
+    if code.startswith(("8", "920")):
+        return "北交所"
+    return "深市"
+
+
+def collect_focus_announcements() -> dict[str, Any]:
+    if ak is None:
+        raise RuntimeError("akshare is not installed")
+    items = []
+    start = (date.today() - timedelta(days=2)).strftime("%Y%m%d")
+    end = date.today().strftime("%Y%m%d")
+    priority_keywords = ["业绩预告", "半年", "半年度", "日常经营", "风险提示", "其他融资", "锂矿", "复产", "储能", "电池"]
+    for code, name in FOCUS_STOCKS.items():
+        try:
+            df = ak.stock_zh_a_disclosure_report_cninfo(
+                symbol=code,
+                market=cninfo_market_for_code(code),
+                start_date=start,
+                end_date=end,
+            )
+            for row in (jsonable(df) or [])[:80]:
+                item = normalize_news_item(f"巨潮公告/{name}", row)
+                item["stock_code"] = code
+                item["stock_name"] = name
+                if not is_recent_time(item.get("time"), hours=48):
+                    continue
+                if is_keyword_hit(item["text"], priority_keywords + FOCUS_EVENT_GROUPS.get(name, [])):
+                    items.append(item)
+        except Exception as exc:
+            items.append({"source": f"巨潮公告/{name}", "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
+    items.sort(key=news_sort_key, reverse=True)
+    return {"count": len([item for item in items if "text" in item]), "items": items[:60]}
 
 
 def classify_sentiment(text: str) -> str:
@@ -611,7 +791,7 @@ def concise_report_summary(title: str, summary: str | None = None) -> str:
 def collect_reports() -> dict[str, Any]:
     session = requests.Session()
     session.headers.update({"User-Agent": UA, "Referer": "https://data.eastmoney.com/"})
-    begin = (date.today() - timedelta(days=10)).strftime("%Y-%m-%d")
+    begin = (date.today() - timedelta(days=2)).strftime("%Y-%m-%d")
     end = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
     params = {
         "industryCode": "*",
@@ -641,8 +821,11 @@ def collect_reports() -> dict[str, Any]:
             continue
         sentiment = classify_sentiment(text)
         sentiment_counter[sentiment] += 1
+        pdf_url = f"https://pdf.dfcfw.com/pdf/H3_{row.get('infoCode')}_1.pdf" if row.get("infoCode") else None
+        link_url = row.get("url") or row.get("link") or row.get("reportUrl") or row.get("attachUrl") or pdf_url
         hits.append(
             {
+                "kind": "PDF研报" if pdf_url else "研报链接",
                 "date": (row.get("publishDate") or "")[:10],
                 "org": row.get("orgSName"),
                 "title": title,
@@ -651,7 +834,8 @@ def collect_reports() -> dict[str, Any]:
                 "rating": row.get("emRatingName"),
                 "sentiment": sentiment,
                 "info_code": row.get("infoCode"),
-                "pdf_url": f"https://pdf.dfcfw.com/pdf/H3_{row.get('infoCode')}_1.pdf" if row.get("infoCode") else None,
+                "pdf_url": pdf_url,
+                "url": link_url,
             }
         )
     return {"count": len(hits), "sentiment": dict(sentiment_counter), "items": hits[:50]}
@@ -978,10 +1162,20 @@ def material_hits(material: dict[str, Any], sources: dict[str, SourceResult], li
         for item in news.data.get("items", []):
             add(item.get("source") or "产业新闻", item.get("text") or "", None, None)
 
+    cls_news = sources.get("财联社快讯")
+    if cls_news and cls_news.ok:
+        for item in cls_news.data.get("items", []):
+            add(item.get("source") or "财联社快讯", item.get("text") or "", item.get("link"), item.get("time"))
+
     metal_news = sources.get("金属快讯")
     if metal_news and metal_news.ok:
         for item in metal_news.data.get("items", []):
-            add(item.get("source") or "金属快讯", item.get("text") or "", None, None)
+            add(item.get("source") or "金属快讯", item.get("text") or "", item.get("link"), item.get("time"))
+
+    announcements = sources.get("重点公告")
+    if announcements and announcements.ok:
+        for item in announcements.data.get("items", []):
+            add(item.get("source") or "重点公告", item.get("text") or "", item.get("link"), item.get("time"))
 
     reports = sources.get("机构研报")
     if reports and reports.ok:
@@ -1001,6 +1195,110 @@ def material_hits(material: dict[str, Any], sources: dict[str, SourceResult], li
 
     hits.sort(key=sort_key)
     return hits[:limit]
+
+
+def infer_foreign_org(text: str) -> str:
+    for keyword in FOREIGN_ORG_KEYWORDS:
+        if keyword.upper() in str(text or "").upper():
+            return keyword
+    return "海外机构"
+
+
+def collect_overseas_opinions(sources: dict[str, SourceResult]) -> list[dict[str, Any]]:
+    candidates = []
+    for source_name in ["财联社快讯", "产业新闻"]:
+        source = sources.get(source_name)
+        if not source or not source.ok:
+            continue
+        for item in source.data.get("items", []):
+            text = item.get("text") or ""
+            if not is_foreign_org_hit(text):
+                continue
+            if item.get("time") and not is_recent_time(item.get("time"), hours=72):
+                continue
+            candidates.append(
+                {
+                    "kind": "海外观点线索",
+                    "date": str(item.get("time") or "")[:10],
+                    "time": item.get("time"),
+                    "org": infer_foreign_org(text),
+                    "source": item.get("source") or source_name,
+                    "title": item.get("title") or text[:120],
+                    "summary": (item.get("content") or text)[:260],
+                    "industry": "海外机构观点",
+                    "rating": None,
+                    "sentiment": classify_sentiment(text),
+                    "url": item.get("link"),
+                    "pdf_url": None,
+                }
+            )
+    seen = set()
+    deduped = []
+    for item in sorted(candidates, key=lambda x: news_sort_key(x), reverse=True):
+        key = f"{item.get('org')}|{item.get('title')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped[:12]
+
+
+def collect_focus_events(sources: dict[str, SourceResult]) -> list[dict[str, Any]]:
+    events = []
+
+    def add_event(group: str, item: dict[str, Any], fallback_source: str, kind: str) -> None:
+        text = item.get("text") or " ".join(str(item.get(k) or "") for k in ["title", "content", "summary"])
+        if not text:
+            return
+        time_value = item.get("time") or item.get("date")
+        if not time_value or not is_recent_time(time_value, hours=48):
+            return
+        events.append(
+            {
+                "group": group,
+                "kind": kind,
+                "source": item.get("source") or fallback_source,
+                "time": str(time_value or ""),
+                "title": item.get("title") or text[:120],
+                "content": item.get("content") or item.get("summary") or text[:260],
+                "text": text[:500],
+                "link": item.get("link") or item.get("url") or item.get("pdf_url"),
+            }
+        )
+
+    for source_name, kind in [
+        ("财联社快讯", "消息"),
+        ("产业新闻", "消息"),
+        ("重点公告", "公告"),
+        ("金属快讯", "材料消息"),
+    ]:
+        source = sources.get(source_name)
+        if not source or not source.ok:
+            continue
+        for item in source.data.get("items", []):
+            text = item.get("text") or ""
+            for group, keywords in FOCUS_EVENT_GROUPS.items():
+                candidate_text = f"{text} {item.get('source') or ''} {item.get('stock_name') or ''}"
+                if is_focus_event_hit(group, candidate_text):
+                    add_event(group, item, source_name, kind)
+
+    reports = sources.get("机构研报")
+    if reports and reports.ok:
+        for item in reports.data.get("items", []):
+            text = f"{item.get('title') or ''} {item.get('summary') or ''}"
+            for group, keywords in FOCUS_EVENT_GROUPS.items():
+                if is_focus_event_hit(group, text):
+                    add_event(group, {**item, "text": text, "time": item.get("date"), "link": item.get("url") or item.get("pdf_url"), "source": f"研报/{item.get('org') or ''}"}, "机构研报", "研报线索")
+
+    seen = set()
+    deduped = []
+    for item in sorted(events, key=news_sort_key, reverse=True):
+        key = f"{item.get('group')}|{item.get('title')}|{item.get('source')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
 
 
 def signal_tightness(base: str, hits: list[dict[str, Any]], price: dict[str, Any] | None) -> str:
@@ -1129,30 +1427,41 @@ def build_reports_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     items = []
     if reports and reports.ok:
         items = reports.data.get("items", [])[:12]
+    overseas = collect_overseas_opinions(sources)
     return {
         "type": "reports",
         "title": "主题研报精华",
-        "summary": "保留日期、机构、观点、评级、行业、标题、简要和 PDF 链接。",
+        "summary": "近三天研报/链接 + 海外机构观点线索；不要求必须有 PDF。",
+        "groups": [
+            {"name": "近三天研报/链接", "items": items},
+            {"name": "海外机构观点线索", "items": overseas},
+        ],
         "reports": items,
-        "items": [f"{x.get('date')} / {x.get('org')} / {x.get('sentiment')} / {x.get('rating')} / {x.get('industry')}：{x.get('title')}" for x in items]
+        "overseas_opinions": overseas,
+        "items": [f"{x.get('date')} / {x.get('org')} / {x.get('sentiment')} / {x.get('rating')} / {x.get('industry')}：{x.get('title')}" for x in items + overseas]
         or ["暂无主题研报命中。"],
     }
 
 
 def build_focus_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
+    events = collect_focus_events(sources)
     groups = []
-    raw_items = build_focus_items(sources)
-    current = None
-    for item in raw_items:
-        if item.endswith("：") and not item.startswith("  "):
-            current = {"name": item[:-1], "items": []}
-            groups.append(current)
-        elif current is not None:
-            current["items"].append(item.strip())
+    for name in FOCUS_EVENT_GROUPS:
+        group_items = [item for item in events if item.get("group") == name][:8]
+        groups.append({"name": name, "items": group_items})
+    raw_items = []
+    for group in groups:
+        raw_items.append(f"{group['name']}：")
+        raw_items.extend(
+            f"  {item.get('time') or ''} {item.get('source') or ''}：{item.get('title') or item.get('text') or ''}"
+            for item in group["items"][:5]
+        )
+        if not group["items"]:
+            raw_items.append("  暂无近48小时命中")
     return {
         "type": "focus_groups",
         "title": "重点公司/产业消息",
-        "summary": "宁德、英伟达、半导体上游材料三条固定关注线。",
+        "summary": "近48小时公告与消息；优先财联社，东财/巨潮/金属网兜底。",
         "groups": groups,
         "items": raw_items,
     }
@@ -1255,11 +1564,21 @@ def build_raw_digest(results: list[SourceResult]) -> str:
         data = news.data
         sample = "；".join(item.get("text", "")[:80] for item in data.get("items", [])[:5] if item.get("text"))
         lines.append(f"产业新闻：主题命中 {data.get('count')} 条。样例：{sample}")
+    cls_news = sources.get("财联社快讯")
+    if cls_news and cls_news.ok:
+        data = cls_news.data
+        sample = "；".join(item.get("text", "")[:80] for item in data.get("items", [])[:5] if item.get("text"))
+        lines.append(f"财联社快讯：主题命中 {data.get('count')} 条。样例：{sample}")
     metal_news = sources.get("金属快讯")
     if metal_news and metal_news.ok:
         data = metal_news.data
         sample = "；".join(item.get("text", "")[:80] for item in data.get("items", [])[:5] if item.get("text"))
         lines.append(f"金属快讯：材料主题命中 {data.get('count')} 条。样例：{sample}")
+    announcements = sources.get("重点公告")
+    if announcements and announcements.ok:
+        data = announcements.data
+        sample = "；".join(item.get("text", "")[:80] for item in data.get("items", [])[:5] if item.get("text"))
+        lines.append(f"重点公告：近48小时命中 {data.get('count')} 条。样例：{sample}")
     quotes = sources.get("产业链行情")
     if quotes and quotes.ok:
         parts = []
@@ -1406,7 +1725,9 @@ def generate_report(
         ("北向资金", collect_northbound),
         ("涨停池", collect_limit_up),
         ("材料雷达", collect_material_radar),
+        ("财联社快讯", collect_cls_news),
         ("金属快讯", collect_metal_news),
+        ("重点公告", collect_focus_announcements),
         ("产业新闻", collect_news),
         ("机构研报", collect_reports),
         ("期指席位", collect_cffex_positions),

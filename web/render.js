@@ -135,21 +135,48 @@
   }
 
   function renderReports(section) {
-    const rows = (section.reports || []).map(item => `
-      <div class="report-item">
-        <div class="item-meta">${escapeHtml([item.date, item.org, item.sentiment, item.rating, item.industry].filter(Boolean).join(' / '))}</div>
-        <div class="item-title">${escapeHtml(item.title || '')}${item.pdf_url ? ` <a href="${escapeHtml(item.pdf_url)}" target="_blank" rel="noopener noreferrer">PDF</a>` : ''}</div>
-        ${item.summary ? `<div class="item-text">${escapeHtml(item.summary)}</div>` : ''}
-      </div>
-    `).join('');
-    return `<div class="report-list">${rows || '<div class="small">暂无主题研报命中。</div>'}</div>`;
+    const groups = section.groups && section.groups.length
+      ? section.groups
+      : [{ name: '研报/观点', items: section.reports || [] }];
+    const html = groups.map(group => {
+      const rows = (group.items || []).map(item => {
+        const link = item.pdf_url || item.url || item.link;
+        const linkText = item.pdf_url ? 'PDF' : (link ? '链接' : '');
+        return `
+          <div class="report-item">
+            <div class="item-meta">${escapeHtml([item.kind, item.date || item.time, item.org || item.source, item.sentiment, item.rating, item.industry].filter(Boolean).join(' / '))}</div>
+            <div class="item-title">${escapeHtml(item.title || '')}${link ? ` <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${linkText}</a>` : ''}</div>
+            ${item.summary ? `<div class="item-text">${escapeHtml(item.summary)}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+      return `
+        <div class="group-card">
+          <h3>${escapeHtml(group.name)}</h3>
+          <div class="report-list">${rows || '<div class="small">暂无命中。</div>'}</div>
+        </div>
+      `;
+    }).join('');
+    return `<div class="group-list">${html || '<div class="small">暂无主题研报命中。</div>'}</div>`;
   }
 
   function renderFocus(section) {
     const rows = (section.groups || []).map(group => `
       <div class="group-card">
         <h3>${escapeHtml(group.name)}</h3>
-        <ul>${(group.items || []).map(item => `<li>${linkify(item)}</li>`).join('') || '<li>暂无命中</li>'}</ul>
+        <div class="news-list">
+          ${(group.items || []).map(item => {
+            if (typeof item === 'string') return `<div class="news-item">${linkify(item)}</div>`;
+            const link = item.link || item.url || item.pdf_url;
+            return `
+              <div class="news-item">
+                <div class="item-meta">${escapeHtml([item.kind, item.time, item.source].filter(Boolean).join(' / '))}</div>
+                <div class="item-title">${escapeHtml(item.title || item.text || '')}${link ? ` <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">链接</a>` : ''}</div>
+                ${item.content ? `<div class="item-text">${escapeHtml(item.content)}</div>` : ''}
+              </div>
+            `;
+          }).join('') || '<div class="small">暂无近48小时命中</div>'}
+        </div>
       </div>
     `).join('');
     return `<div class="group-list">${rows || renderFallback(section)}</div>`;
