@@ -116,6 +116,7 @@ WATCHLIST = {
 FOCUS_TOPICS = {
     "宁德相关": ["宁德", "宁德时代", "CATL", "电池", "储能", "麒麟电池", "神行电池"],
     "美股科技": ["英伟达", "NVIDIA", "GB200", "GB300", "Rubin", "Blackwell", "NVL", "CUDA", "Apple", "Microsoft", "Alphabet", "Amazon", "Meta", "Tesla"],
+    "韩股科技": ["SK Hynix", "SK海力士", "海力士", "三星", "Samsung", "HBM", "DRAM", "NAND", "存储", "AI内存", "晶圆代工"],
     "半导体上游材料": ["半导体", "光刻胶", "电子特气", "氦气", "氦", "硅片", "CMP", "ABF", "InP", "GaAs", "前驱体"],
     "亿纬锂能": ["亿纬锂能", "半年报", "业绩预告", "电池", "储能"],
 }
@@ -123,6 +124,7 @@ FOCUS_TOPICS = {
 FOCUS_EVENT_GROUPS = {
     "宁德时代": ["宁德", "宁德时代", "CATL", "枧下窝", "锂矿", "复产", "储能", "电池"],
     "美股科技": ["NVIDIA", "英伟达", "Rubin", "45摄氏度", "液冷", "GB200", "GB300", "Blackwell", "苹果", "Apple", "AAPL", "微软", "Microsoft", "MSFT", "谷歌", "Alphabet", "GOOGL", "亚马逊", "Amazon", "AMZN", "NVDA", "Meta", "META", "特斯拉", "Tesla", "TSLA", "财报", "业绩", "指引", "资本开支"],
+    "韩股科技": ["SK Hynix", "SK海力士", "海力士", "三星", "Samsung", "HBM", "DRAM", "NAND", "存储", "先进封装", "AI内存", "AI 内存", "晶圆代工", "Foundry"],
     "半导体上游材料": ["日本酸素", "氦气", "氦", "光刻胶", "电子特气", "断供", "涨价", "六氟化钨"],
     "亿纬锂能": ["亿纬锂能", "半年报", "业绩预告", "电池", "储能"],
     "美国宏观与美联储": ["美国", "美联储", "Fed", "FOMC", "降息", "加息", "利率", "CPI", "PCE", "非农", "失业率", "初请", "ISM", "GDP", "美债", "美元"],
@@ -131,6 +133,7 @@ FOCUS_EVENT_GROUPS = {
 FOCUS_EVENT_ANCHORS = {
     "宁德时代": ["宁德", "宁德时代", "CATL", "枧下窝"],
     "美股科技": ["NVIDIA", "英伟达", "Rubin", "GB200", "GB300", "Blackwell", "苹果", "Apple", "AAPL", "微软", "Microsoft", "MSFT", "谷歌", "Alphabet", "GOOGL", "亚马逊", "Amazon", "AMZN", "NVDA", "Meta", "META", "特斯拉", "Tesla", "TSLA"],
+    "韩股科技": ["SK Hynix", "SK海力士", "海力士", "三星", "Samsung", "HBM", "DRAM", "NAND"],
     "半导体上游材料": ["日本酸素", "氦气", "氦", "光刻胶", "电子特气", "六氟化钨"],
     "亿纬锂能": ["亿纬", "亿纬锂能", "EVE"],
     "美国宏观与美联储": ["美国", "美联储", "Fed", "FOMC", "CPI", "PCE", "非农", "失业率", "初请", "ISM", "GDP", "美债"],
@@ -1538,11 +1541,11 @@ def build_material_radar_module(sources: dict[str, SourceResult]) -> dict[str, A
             }
         )
     order = {"紧缺/供给扰动": 0, "价格偏强/偏紧": 1, "价格明显上行": 2}
-    materials.sort(key=lambda item: order.get(item.get("tightness"), 3))
+    materials.sort(key=lambda item: (0 if item.get("name") == "碳酸锂" else 1, order.get(item.get("tightness"), 3)))
     return {
         "type": "material_radar",
         "title": "热点上游材料雷达",
-        "summary": "碳酸锂保留价格/库存；其它材料仅展示相关 A 股、紧缺线索和最新消息。",
+        "summary": "碳酸锂置顶展示价格/库存；其它材料按三列卡片展示相关 A 股、紧缺线索和最新消息。",
         "materials": materials,
         "items": [f"覆盖材料 {len(materials)} 个；只有碳酸锂展示价格/库存，其它材料不填虚假报价。"],
     }
@@ -1678,7 +1681,7 @@ def build_focus_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     return {
         "type": "focus_groups",
         "title": "重点公司/产业消息",
-        "summary": "近48小时公告与消息；覆盖重点公司/产业、美国宏观与美联储、美股科技财报消息。",
+        "summary": "近48小时公告与消息；覆盖重点公司/产业、美国宏观与美联储、美股科技和韩股科技消息。",
         "groups": groups,
         "items": raw_items,
     }

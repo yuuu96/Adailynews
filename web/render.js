@@ -94,12 +94,16 @@
       const inventory = item.inventory || {};
       const fullPrice = item.display_type === 'full_price_inventory';
       const allStocks = item.related_stocks || [];
-      const stockLimit = fullPrice ? 8 : 6;
-      const stocks = allStocks.slice(0, stockLimit).map(s => `
+      const stockLimit = fullPrice ? 8 : 5;
+      const visibleStocks = allStocks.slice(0, stockLimit).map(s => `
         <span class="chip">${escapeHtml(s.name)} ${pct(s.change_pct)}</span>
       `).join('');
-      const moreStocks = allStocks.length > stockLimit ? `<span class="chip chip-more">+${allStocks.length - stockLimit}</span>` : '';
-      const stockRow = stocks || moreStocks ? `${stocks}${moreStocks}` : '<span class="small">暂无行情</span>';
+      const hiddenStocks = allStocks.slice(stockLimit).map(s => `
+        <span class="chip stock-extra">${escapeHtml(s.name)} ${pct(s.change_pct)}</span>
+      `).join('');
+      const hiddenCount = Math.max(allStocks.length - stockLimit, 0);
+      const moreStocks = hiddenCount ? `<button type="button" class="chip chip-more" data-material-toggle data-count="${hiddenCount}" aria-expanded="false">+${hiddenCount}</button>` : '';
+      const stockRow = visibleStocks || hiddenStocks || moreStocks ? `${visibleStocks}${hiddenStocks}${moreStocks}` : '<span class="small">暂无行情</span>';
       const news = (item.news || []).slice(0, fullPrice ? 2 : 1).map(n => `
         <div class="item-text">${escapeHtml(n.source || '')}：${linkify(n.text || '')}${n.link ? ` <a href="${escapeHtml(n.link)}" target="_blank" rel="noopener noreferrer">链接</a>` : ''}</div>
       `).join('');
@@ -273,6 +277,18 @@
         ${renderBody(section)}
       </article>
     `).join('');
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-material-toggle]');
+      if (!button) return;
+      const row = button.closest('.chip-row');
+      if (!row) return;
+      const expanded = row.classList.toggle('expanded');
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      button.textContent = expanded ? '收起' : `+${button.dataset.count || ''}`;
+    });
   }
 
   window.IntelUI = {
