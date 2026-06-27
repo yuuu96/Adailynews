@@ -53,6 +53,16 @@
     `).join('');
     const tags = (section.tags || []).map(t => `<span class="chip">${escapeHtml(t.name)} <b>${fmt(t.count)}</b></span>`).join('');
     const industries = (section.industries || []).map(t => `<span class="chip">${escapeHtml(t.name)} <b>${fmt(t.count)}</b></span>`).join('');
+    const topIndustries = (section.top_limitup_industries || []).map(group => `
+      <div class="group-card">
+        <h3>${escapeHtml(group.name)} <span class="small">${fmt(group.count)}只涨停</span></h3>
+        <div class="chip-row">
+          ${(group.stocks || []).map(s => `
+            <span class="chip">${escapeHtml(s.name)}(${escapeHtml(s.code)})${s.board_count ? ` ${escapeHtml(s.board_count)}` : ''}${s.is_one_word_board ? ' 一字' : ''}</span>
+          `).join('') || '<span class="small">暂无个股明细</span>'}
+        </div>
+      </div>
+    `).join('');
     const oneWord = table(
       [
         { label: '代码', key: 'code' },
@@ -71,6 +81,8 @@
       <div class="chip-row">${tags || '<span class="small">暂无</span>'}</div>
       <div class="small">涨停行业集中</div>
       <div class="chip-row">${industries || '<span class="small">暂无</span>'}</div>
+      <h3>前三集中板块涨停股</h3>
+      <div class="group-list">${topIndustries || '<div class="small">暂无板块明细。</div>'}</div>
       <h3>一字板明细</h3>
       ${oneWord}
     `;
@@ -80,6 +92,7 @@
     const cards = (section.materials || []).map(item => {
       const price = item.price;
       const inventory = item.inventory || {};
+      const fullPrice = item.display_type === 'full_price_inventory';
       const stocks = (item.related_stocks || []).slice(0, 4).map(s => `
         <span class="chip">${escapeHtml(s.name)} ${pct(s.change_pct)}</span>
       `).join('');
@@ -96,8 +109,8 @@
             <span class="pill ${String(item.tightness || '').includes('紧') || String(item.tightness || '').includes('上行') ? 'hot' : ''}">${escapeHtml(item.tightness || 'NA')}</span>
           </div>
           <div class="material-facts">
-            <div class="fact"><span>价格走势</span><strong>${price ? `${fmt(price.price)} ${escapeHtml(price.unit || '')} · ${pct(price.change_pct)} · ${escapeHtml(price.trend || '')}` : escapeHtml(item.coverage || '暂无')}</strong></div>
-            <div class="fact"><span>库存/仓单</span><strong>${inventory && inventory.value ? `${fmt(inventory.value)} ${inventory.change ? `(${fmt(inventory.change)})` : ''}` : (inventory && inventory.error ? escapeHtml(inventory.error) : '暂无直连数据')}</strong></div>
+            ${fullPrice ? `<div class="fact"><span>价格走势</span><strong>${price ? `${fmt(price.price)} ${escapeHtml(price.unit || '')} · ${pct(price.change_pct)} · ${escapeHtml(price.trend || '')}` : escapeHtml(item.coverage || '暂无')}</strong></div>` : ''}
+            ${fullPrice ? `<div class="fact"><span>库存/仓单</span><strong>${inventory && inventory.value ? `${fmt(inventory.value)} ${inventory.change ? `(${fmt(inventory.change)})` : ''}` : (inventory && inventory.error ? escapeHtml(inventory.error) : '暂无直连数据')}</strong></div>` : ''}
             <div class="fact"><span>扩产难度</span><strong>${escapeHtml(item.expansion || 'NA')}</strong></div>
             <div class="fact"><span>相关 A 股</span><strong>${stocks || '暂无行情'}</strong></div>
           </div>
@@ -119,6 +132,8 @@
   }
 
   function renderFutures(section) {
+    const diagnostics = (section.diagnostics || []).slice(0, 8).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+    const reason = section.empty_reason ? `<div class="small">${escapeHtml(section.empty_reason)}</div>` : '';
     return table(
       [
         { label: '组别', key: 'group' },
@@ -131,7 +146,10 @@
         { label: '方向', key: 'direction' }
       ],
       section.table || []
-    );
+    ) + `
+      ${reason}
+      ${diagnostics ? `<details class="soft-panel" style="margin-top:8px"><summary>期指数据诊断</summary><ul>${diagnostics}</ul></details>` : ''}
+    `;
   }
 
   function renderReports(section) {
@@ -144,7 +162,7 @@
         const linkText = item.pdf_url ? 'PDF' : (link ? '链接' : '');
         return `
           <div class="report-item">
-            <div class="item-meta">${escapeHtml([item.kind, item.date || item.time, item.org || item.source, item.sentiment, item.rating, item.industry].filter(Boolean).join(' / '))}</div>
+            <div class="item-meta">${escapeHtml([item.kind, item.date || item.time, item.org || item.source, item.analyst, item.target_sector, item.sentiment, item.rating, item.industry].filter(Boolean).join(' / '))}</div>
             <div class="item-title">${escapeHtml(item.title || '')}${link ? ` <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${linkText}</a>` : ''}</div>
             ${item.summary ? `<div class="item-text">${escapeHtml(item.summary)}</div>` : ''}
           </div>

@@ -99,8 +99,8 @@ SOURCE_TIMEOUTS = {
     "财联社快讯": 9,
     "产业新闻": 15,
     "重点公告": 18,
-    "机构研报": 25,
-    "期指席位": 30,
+    "机构研报": 35,
+    "期指席位": 45,
     "产业链行情": 15,
 }
 
@@ -125,6 +125,8 @@ FOCUS_EVENT_GROUPS = {
     "英伟达": ["NVIDIA", "英伟达", "Rubin", "45摄氏度", "液冷", "GB200", "GB300", "Blackwell"],
     "半导体上游材料": ["日本酸素", "氦气", "氦", "光刻胶", "电子特气", "断供", "涨价", "六氟化钨"],
     "亿纬锂能": ["亿纬锂能", "半年报", "业绩预告", "电池", "储能"],
+    "美国宏观与美联储": ["美国", "美联储", "Fed", "FOMC", "降息", "加息", "利率", "CPI", "PCE", "非农", "失业率", "初请", "ISM", "GDP", "美债", "美元"],
+    "美股七姐妹": ["苹果", "Apple", "AAPL", "微软", "Microsoft", "MSFT", "谷歌", "Alphabet", "GOOGL", "亚马逊", "Amazon", "AMZN", "英伟达", "NVIDIA", "NVDA", "Meta", "META", "特斯拉", "Tesla", "TSLA", "财报", "业绩", "指引", "资本开支"],
 }
 
 FOCUS_EVENT_ANCHORS = {
@@ -132,6 +134,8 @@ FOCUS_EVENT_ANCHORS = {
     "英伟达": ["NVIDIA", "英伟达", "Rubin", "GB200", "GB300", "Blackwell"],
     "半导体上游材料": ["日本酸素", "氦气", "氦", "光刻胶", "电子特气", "六氟化钨"],
     "亿纬锂能": ["亿纬", "亿纬锂能", "EVE"],
+    "美国宏观与美联储": ["美国", "美联储", "Fed", "FOMC", "CPI", "PCE", "非农", "失业率", "初请", "ISM", "GDP", "美债"],
+    "美股七姐妹": ["苹果", "Apple", "AAPL", "微软", "Microsoft", "MSFT", "谷歌", "Alphabet", "GOOGL", "亚马逊", "Amazon", "AMZN", "英伟达", "NVIDIA", "NVDA", "Meta", "META", "特斯拉", "Tesla", "TSLA"],
 }
 
 FOREIGN_ORG_KEYWORDS = [
@@ -159,6 +163,54 @@ FOREIGN_ORG_KEYWORDS = [
 FOCUS_STOCKS = {
     "300750": "宁德时代",
     "300014": "亿纬锂能",
+}
+
+CICC_GLOBAL_KEYWORDS = [
+    "大盘",
+    "策略",
+    "市场",
+    "指数",
+    "科技",
+    "AI",
+    "算力",
+    "半导体",
+    "电子",
+    "宏观",
+    "经济",
+    "利率",
+    "流动性",
+    "政策",
+    "海外",
+    "美联储",
+    "降息",
+]
+
+TRACKED_ANALYSTS = [
+    {"sector": "传媒", "broker": "广发", "aliases": ["旷石", "钻石"]},
+    {"sector": "医药", "broker": "中信建投", "aliases": ["贺菊颖"]},
+    {"sector": "医药", "broker": "兴业证券", "aliases": ["孙媛媛"]},
+    {"sector": "金属新材料", "broker": "长江", "aliases": ["王鹤涛"]},
+    {"sector": "金属新材料", "broker": "民生", "aliases": ["邱祖学"]},
+    {"sector": "金属新材料", "broker": "中信", "aliases": ["王介超"]},
+    {"sector": "金属新材料", "broker": "国君", "aliases": ["李鹏飞"]},
+    {"sector": "电子", "broker": "广发", "aliases": ["耿正"]},
+    {"sector": "电子", "broker": "中信建投", "aliases": ["刘双锋"]},
+    {"sector": "新能源与电力设备", "broker": "长江", "aliases": ["邬博花"]},
+    {"sector": "新能源与电力设备", "broker": "东吴", "aliases": ["曾朵红"]},
+    {"sector": "能源", "broker": "广发", "aliases": ["果鹏"]},
+    {"sector": "轻工造纸", "broker": "申万", "aliases": ["周海晨"]},
+]
+
+BROKER_ALIAS_MAP = {
+    "广发": ["广发", "广发证券"],
+    "中信建投": ["中信建投", "中信建投证券"],
+    "兴业证券": ["兴业", "兴业证券"],
+    "长江": ["长江", "长江证券"],
+    "民生": ["民生", "民生证券"],
+    "中信": ["中信", "中信证券"],
+    "国君": ["国君", "国泰君安"],
+    "东吴": ["东吴", "东吴证券"],
+    "申万": ["申万", "申万宏源"],
 }
 
 MATERIAL_SIGNAL_WORDS = [
@@ -559,10 +611,39 @@ def collect_limit_up() -> dict[str, Any]:
         if is_one_word:
             one_word_boards.append(item)
     cleaned.sort(key=lambda item: item.get("amount_yi", 0), reverse=True)
+    top_limitup_industries = []
+    for industry, count in industry_counter.most_common(3):
+        stocks = [item for item in cleaned if item.get("industry") == industry]
+        stocks.sort(
+            key=lambda item: (
+                1 if item.get("is_one_word_board") else 0,
+                safe_float(item.get("board_count"), 0),
+                item.get("amount_yi", 0),
+            ),
+            reverse=True,
+        )
+        top_limitup_industries.append(
+            {
+                "name": industry,
+                "count": count,
+                "stocks": [
+                    {
+                        "code": item.get("code"),
+                        "name": item.get("name"),
+                        "board_count": item.get("board_count"),
+                        "amount_yi": item.get("amount_yi"),
+                        "first_time": item.get("first_time"),
+                        "is_one_word_board": item.get("is_one_word_board"),
+                    }
+                    for item in stocks[:20]
+                ],
+            }
+        )
     return {
         "date": d,
         "count": len(cleaned),
         "industry_top": industry_counter.most_common(15),
+        "top_limitup_industries": top_limitup_industries,
         "one_word_count": len(one_word_boards),
         "one_word_boards": one_word_boards[:40],
         "top": cleaned[:40],
@@ -788,6 +869,75 @@ def concise_report_summary(title: str, summary: str | None = None) -> str:
     return f"标题要点：{title[:180]}"
 
 
+def report_link(row: dict[str, Any], pdf_url: str | None) -> str | None:
+    return (
+        row.get("url")
+        or row.get("link")
+        or row.get("reportUrl")
+        or row.get("attachUrl")
+        or row.get("infoUrl")
+        or pdf_url
+    )
+
+
+def normalize_report_item(row: dict[str, Any], kind: str | None = None, analyst: str | None = None) -> dict[str, Any]:
+    title = row.get("title") or ""
+    summary = row.get("summary") or row.get("zy") or ""
+    text = f"{title} {summary} {text_from_record(row)}"
+    pdf_url = f"https://pdf.dfcfw.com/pdf/H3_{row.get('infoCode')}_1.pdf" if row.get("infoCode") else None
+    return {
+        "kind": kind or ("PDF研报" if pdf_url else "研报链接"),
+        "date": (row.get("publishDate") or "")[:10],
+        "org": row.get("orgSName"),
+        "analyst": analyst,
+        "title": title,
+        "summary": concise_report_summary(title, summary),
+        "industry": row.get("indvInduName"),
+        "rating": row.get("emRatingName"),
+        "sentiment": classify_sentiment(text),
+        "info_code": row.get("infoCode"),
+        "pdf_url": pdf_url,
+        "url": report_link(row, pdf_url),
+    }
+
+
+def report_key(item: dict[str, Any]) -> str:
+    return str(item.get("info_code") or f"{item.get('date')}|{item.get('org')}|{item.get('title')}")
+
+
+def dedup_reports(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    seen = set()
+    deduped = []
+    for item in sorted(items, key=lambda x: str(x.get("date") or ""), reverse=True):
+        key = report_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped[:limit]
+
+
+def is_cicc_global_report(row: dict[str, Any]) -> bool:
+    text = text_from_record(row)
+    org = str(row.get("orgSName") or "")
+    if not any(keyword.upper() in f"{org} {text}".upper() for keyword in ["中金", "CICC"]):
+        return False
+    return is_keyword_hit(text, CICC_GLOBAL_KEYWORDS)
+
+
+def match_tracked_analysts(row: dict[str, Any]) -> list[dict[str, Any]]:
+    text = text_from_record(row)
+    org = str(row.get("orgSName") or "")
+    matches = []
+    for target in TRACKED_ANALYSTS:
+        broker_aliases = BROKER_ALIAS_MAP.get(target["broker"], [target["broker"]])
+        broker_hit = any(alias in org or alias in text for alias in broker_aliases)
+        analyst_hit = any(alias in text for alias in target["aliases"])
+        if broker_hit and analyst_hit:
+            matches.append(target)
+    return matches
+
+
 def collect_reports() -> dict[str, Any]:
     session = requests.Session()
     session.headers.update({"User-Agent": UA, "Referer": "https://data.eastmoney.com/"})
@@ -808,37 +958,49 @@ def collect_reports() -> dict[str, Any]:
         "code": "",
         "rcode": "",
     }
-    r = session.get("https://reportapi.eastmoney.com/report/list", params=params, timeout=20)
-    r.raise_for_status()
-    rows = r.json().get("data") or []
-    hits = []
+    rows = []
+    for page in range(1, 4):
+        page_params = {**params, "pageNo": str(page), "p": str(page), "pageNum": str(page), "pageNumber": str(page)}
+        r = session.get("https://reportapi.eastmoney.com/report/list", params=page_params, timeout=15)
+        r.raise_for_status()
+        payload = r.json()
+        batch = payload.get("data") or []
+        rows.extend(batch)
+        total_page = int(safe_float(payload.get("TotalPage") or payload.get("totalPage") or 1, 1))
+        if not batch or page >= total_page:
+            break
+    theme_hits = []
+    cicc_hits = []
+    analyst_hits = []
     sentiment_counter: Counter[str] = Counter()
     for row in rows:
         title = row.get("title") or ""
         summary = row.get("summary") or row.get("zy") or ""
         text = f"{title} {summary}"
-        if not is_theme_hit(text):
-            continue
-        sentiment = classify_sentiment(text)
-        sentiment_counter[sentiment] += 1
-        pdf_url = f"https://pdf.dfcfw.com/pdf/H3_{row.get('infoCode')}_1.pdf" if row.get("infoCode") else None
-        link_url = row.get("url") or row.get("link") or row.get("reportUrl") or row.get("attachUrl") or pdf_url
-        hits.append(
-            {
-                "kind": "PDF研报" if pdf_url else "研报链接",
-                "date": (row.get("publishDate") or "")[:10],
-                "org": row.get("orgSName"),
-                "title": title,
-                "summary": concise_report_summary(title, summary),
-                "industry": row.get("indvInduName"),
-                "rating": row.get("emRatingName"),
-                "sentiment": sentiment,
-                "info_code": row.get("infoCode"),
-                "pdf_url": pdf_url,
-                "url": link_url,
-            }
-        )
-    return {"count": len(hits), "sentiment": dict(sentiment_counter), "items": hits[:50]}
+        if is_theme_hit(text):
+            item = normalize_report_item(row)
+            sentiment_counter[item["sentiment"]] += 1
+            theme_hits.append(item)
+        if is_cicc_global_report(row):
+            cicc_hits.append(normalize_report_item(row, kind="中金全局研报"))
+        for target in match_tracked_analysts(row):
+            analyst_name = "/".join(target["aliases"])
+            item = normalize_report_item(row, kind="指定分析师研报", analyst=analyst_name)
+            item["target_sector"] = target["sector"]
+            item["target_broker"] = target["broker"]
+            analyst_hits.append(item)
+    theme_hits = dedup_reports(theme_hits, 50)
+    cicc_hits = dedup_reports(cicc_hits, 20)
+    analyst_hits = dedup_reports(analyst_hits, 30)
+    return {
+        "count": len(theme_hits),
+        "sentiment": dict(sentiment_counter),
+        "items": theme_hits,
+        "cicc_reports": cicc_hits,
+        "analyst_reports": analyst_hits,
+        "analyst_watchlist": TRACKED_ANALYSTS,
+        "window": {"begin": begin, "end": end},
+    }
 
 
 def pick_realtime_contract(rows: list[dict[str, Any]], material: dict[str, Any]) -> dict[str, Any] | None:
@@ -885,10 +1047,11 @@ def collect_material_radar() -> dict[str, Any]:
     quote_map = tencent_quote(all_codes)
     items = []
     for config in MATERIAL_CONFIG:
+        price_enabled = config["name"] == "碳酸锂"
         price = None
         price_error = None
         status = "no_realtime_source"
-        if config.get("futures_symbol"):
+        if price_enabled and config.get("futures_symbol"):
             try:
                 df = ak.futures_zh_realtime(symbol=config["futures_symbol"])
                 rows = jsonable(df) or []
@@ -910,7 +1073,7 @@ def collect_material_radar() -> dict[str, Any]:
                 price_error = f"{type(exc).__name__}: {str(exc)[:160]}"
                 status = "fail"
         inventory = None
-        if config.get("inventory_symbol"):
+        if price_enabled and config.get("inventory_symbol"):
             inventory = collect_material_inventory(config["inventory_symbol"])
         related = [quote_map[code] for code in config.get("related_codes", []) if code in quote_map]
         items.append(
@@ -918,6 +1081,7 @@ def collect_material_radar() -> dict[str, Any]:
                 "name": config["name"],
                 "category": config["category"],
                 "keywords": config["keywords"],
+                "display_type": "full_price_inventory" if price_enabled else "news_and_stocks_only",
                 "status": status,
                 "price": price,
                 "price_error": price_error,
@@ -925,7 +1089,7 @@ def collect_material_radar() -> dict[str, Any]:
                 "base_tightness": config["tightness"],
                 "expansion": config["expansion"],
                 "related_stocks": related,
-                "coverage": "有期货/库存直连" if price or inventory else "暂无稳定直连价格，使用新闻/研报/题材线索",
+                "coverage": "有期货/库存直连" if price_enabled and (price or inventory) else ("碳酸锂价格/库存暂不可用" if price_enabled else "仅展示相关 A 股和消息"),
             }
         )
     return {"items": items, "count": len(items)}
@@ -948,26 +1112,38 @@ def collect_cffex_positions() -> dict[str, Any]:
         raise RuntimeError("akshare is not installed")
     target_vars = ["IF", "IC", "IH", "IM"]
     target_parties = ["中信", "国泰君安", "华泰", "海通", "广发", "银河", "申万", "招商"]
-    last_error = None
-    for offset in range(0, 8):
+    diagnostics = []
+    rows: list[dict[str, Any]] = []
+    query_date = ""
+    for offset in range(0, 15):
         query_date = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
-        try:
-            payload = ak.get_cffex_rank_table(date=query_date, vars_list=target_vars)
-            if isinstance(payload, dict):
-                rows = []
-                for contract, frame in payload.items():
-                    for row in jsonable(frame) or []:
-                        row["contract"] = contract
-                        rows.append(row)
-            else:
-                rows = jsonable(payload) or []
-            if rows:
-                break
-        except Exception as exc:
-            last_error = exc
-            rows = []
-    else:
-        raise RuntimeError(f"no CFFEX data: {last_error}")
+        day_rows: list[dict[str, Any]] = []
+        day_notes = []
+        for var in target_vars:
+            try:
+                payload = ak.get_cffex_rank_table(date=query_date, vars_list=[var])
+                if isinstance(payload, dict):
+                    var_rows = []
+                    for contract, frame in payload.items():
+                        for row in jsonable(frame) or []:
+                            row["contract"] = contract
+                            row["queried_var"] = var
+                            var_rows.append(row)
+                else:
+                    var_rows = jsonable(payload) or []
+                    for row in var_rows:
+                        row["queried_var"] = var
+                if var_rows:
+                    day_rows.extend(var_rows)
+                    day_notes.append(f"{var}:{len(var_rows)}")
+                else:
+                    day_notes.append(f"{var}:空")
+            except Exception as exc:
+                day_notes.append(f"{var}:{type(exc).__name__}:{str(exc)[:80]}")
+        diagnostics.append(f"{query_date} " + " / ".join(day_notes))
+        if day_rows:
+            rows = day_rows
+            break
 
     summaries = []
     for row in rows:
@@ -1010,7 +1186,7 @@ def collect_cffex_positions() -> dict[str, Any]:
         short_value = detect_columns(cols, ["short_open_interest", "空单持仓", "卖持仓"])
         long_chg = detect_columns(cols, ["long_open_interest_chg", "多单持仓变化", "买持仓变化"])
         short_chg = detect_columns(cols, ["short_open_interest_chg", "空单持仓变化", "卖持仓变化"])
-        symbol = row.get("variety") or row.get("symbol") or row.get("合约") or row.get("品种")
+        symbol = row.get("variety") or row.get("symbol") or row.get("合约") or row.get("品种") or row.get("queried_var")
         add_party(str(symbol), row.get(long_party) if long_party else None, "long", row.get(long_value), row.get(long_chg))
         add_party(str(symbol), row.get(short_party) if short_party else None, "short", row.get(short_value), row.get(short_chg))
         normalized.append(
@@ -1050,9 +1226,17 @@ def collect_cffex_positions() -> dict[str, Any]:
         row = {"group": name, **aggregate[name]}
         row["direction"] = "净多" if row["net_value"] > 0 else ("净空" if row["net_value"] < 0 else "持平")
         aggregate_rows.append(row)
+    empty_reason = None
+    if not rows:
+        empty_reason = "最近15个自然日未取得中金所席位表，常见原因是周末/节假日、交易所未公布或 akshare 接口空返回。"
+    elif not normalized:
+        empty_reason = "已取得中金所席位表，但未命中中信/重点机构席位或接口列名发生变化。"
     return {
         "date": query_date,
         "count": len(normalized),
+        "raw_count": len(rows),
+        "empty_reason": empty_reason,
+        "diagnostics": diagnostics[:20],
         "aggregate": aggregate,
         "aggregate_rows": aggregate_rows,
         "party_summary": summary_rows,
@@ -1317,6 +1501,7 @@ def build_fermentation_module(sources: dict[str, SourceResult]) -> dict[str, Any
     limit_up = sources.get("涨停池")
     tag_top = ths.data.get("tag_top", [])[:10] if ths and ths.ok else []
     industry_top = limit_up.data.get("industry_top", [])[:8] if limit_up and limit_up.ok else []
+    top_limitup_industries = limit_up.data.get("top_limitup_industries", []) if limit_up and limit_up.ok else []
     one_word = limit_up.data.get("one_word_boards", [])[:20] if limit_up and limit_up.ok else []
     metrics = [
         {"label": "强势股", "value": ths.data.get("count", 0) if ths and ths.ok else "NA"},
@@ -1330,9 +1515,11 @@ def build_fermentation_module(sources: dict[str, SourceResult]) -> dict[str, Any
         "metrics": metrics,
         "tags": [{"name": name, "count": count} for name, count in tag_top],
         "industries": [{"name": name, "count": count} for name, count in industry_top],
+        "top_limitup_industries": top_limitup_industries,
         "one_word_boards": one_word,
         "items": [
             f"高频题材：{'、'.join(name + '(' + str(count) + ')' for name, count in tag_top[:6]) or '暂无'}",
+            f"前三涨停集中板块：{'、'.join(x.get('name', '') + '(' + str(x.get('count', 0)) + ')' for x in top_limitup_industries[:3]) or '暂无'}",
             f"一字板：{'、'.join(x.get('name') + '(' + x.get('code') + ')' for x in one_word[:8]) or '暂无'}",
         ],
     }
@@ -1351,6 +1538,7 @@ def build_material_radar_module(sources: dict[str, SourceResult]) -> dict[str, A
             {
                 "name": row.get("name"),
                 "category": row.get("category"),
+                "display_type": row.get("display_type"),
                 "price": price,
                 "inventory": inventory,
                 "tightness": signal_tightness(row.get("base_tightness", ""), hits, price),
@@ -1365,9 +1553,9 @@ def build_material_radar_module(sources: dict[str, SourceResult]) -> dict[str, A
     return {
         "type": "material_radar",
         "title": "热点上游材料雷达",
-        "summary": "价格走势、库存/仓单、紧缺程度、扩产难度、最新线索和相关 A 股。",
+        "summary": "碳酸锂保留价格/库存；其它材料仅展示相关 A 股、紧缺线索和最新消息。",
         "materials": materials,
-        "items": [f"覆盖材料 {len(materials)} 个；无直连价格的材料以新闻/研报/题材线索展示。"],
+        "items": [f"覆盖材料 {len(materials)} 个；只有碳酸锂展示价格/库存，其它材料不填虚假报价。"],
     }
 
 
@@ -1410,35 +1598,75 @@ def build_futures_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
                     "direction": row.get("direction"),
                 }
             )
+    diagnostics = []
+    empty_reason = None
+    if futures and futures.ok:
+        diagnostics = futures.data.get("diagnostics", []) or []
+        empty_reason = futures.data.get("empty_reason")
     return {
         "type": "futures_summary",
         "title": "期指重点席位多空",
         "summary": f"中金所 IF/IC/IH/IM 重点席位汇总，日期 {futures.data.get('date') if futures and futures.ok else '暂无'}。",
         "table": rows,
+        "diagnostics": diagnostics,
+        "empty_reason": empty_reason,
         "items": [
             f"{row['group']}：多{row['long_value']} / 空{row['short_value']} / 净{row['net_value']}"
             for row in rows
-        ] or ["暂无期指席位数据。"],
+        ] or [empty_reason or "暂无期指席位数据。"],
     }
 
 
 def build_reports_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     reports = sources.get("机构研报")
     items = []
+    cicc = []
+    analyst_hits = []
+    analyst_watchlist = TRACKED_ANALYSTS
     if reports and reports.ok:
         items = reports.data.get("items", [])[:12]
+        cicc = reports.data.get("cicc_reports", [])[:10]
+        analyst_hits = reports.data.get("analyst_reports", [])[:12]
+        analyst_watchlist = reports.data.get("analyst_watchlist", TRACKED_ANALYSTS)
+    hit_labels = {
+        f"{item.get('target_broker') or item.get('org')}:{item.get('analyst')}"
+        for item in analyst_hits
+        if item.get("analyst")
+    }
+    missing = []
+    for target in analyst_watchlist:
+        aliases = "/".join(target.get("aliases", []))
+        key = f"{target.get('broker')}:{aliases}"
+        if key not in hit_labels:
+            missing.append(f"{target.get('sector')} {target.get('broker')} {aliases}")
+    analyst_group = analyst_hits[:]
+    if missing:
+        analyst_group.append(
+            {
+                "kind": "跟踪提示",
+                "date": date.today().isoformat(),
+                "org": "指定分析师跟踪",
+                "title": f"近三天无精确命中：{'、'.join(missing[:16])}",
+                "summary": "按分析师姓名精确匹配；不使用券商行业兜底，避免混入噪音。",
+                "sentiment": "中性",
+            }
+        )
     overseas = collect_overseas_opinions(sources)
     return {
         "type": "reports",
         "title": "主题研报精华",
-        "summary": "近三天研报/链接 + 海外机构观点线索；不要求必须有 PDF。",
+        "summary": "近三天研报/链接 + 海外机构观点线索 + 中金全局研报 + 指定分析师精确跟踪。",
         "groups": [
             {"name": "近三天研报/链接", "items": items},
             {"name": "海外机构观点线索", "items": overseas},
+            {"name": "中金全局研报", "items": cicc},
+            {"name": "指定分析师跟踪", "items": analyst_group},
         ],
         "reports": items,
         "overseas_opinions": overseas,
-        "items": [f"{x.get('date')} / {x.get('org')} / {x.get('sentiment')} / {x.get('rating')} / {x.get('industry')}：{x.get('title')}" for x in items + overseas]
+        "cicc_reports": cicc,
+        "analyst_reports": analyst_hits,
+        "items": [f"{x.get('date')} / {x.get('org')} / {x.get('sentiment')} / {x.get('rating')} / {x.get('industry')}：{x.get('title')}" for x in items + overseas + cicc + analyst_hits]
         or ["暂无主题研报命中。"],
     }
 
@@ -1461,7 +1689,7 @@ def build_focus_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     return {
         "type": "focus_groups",
         "title": "重点公司/产业消息",
-        "summary": "近48小时公告与消息；优先财联社，东财/巨潮/金属网兜底。",
+        "summary": "近48小时公告与消息；覆盖重点公司/产业、美国宏观与美联储、美股七姐妹财报消息。",
         "groups": groups,
         "items": raw_items,
     }
@@ -1510,10 +1738,15 @@ def build_raw_digest(results: list[SourceResult]) -> str:
     if limit_up and limit_up.ok:
         data = limit_up.data
         industries = "、".join(f"{name}({n})" for name, n in data.get("industry_top", [])[:8])
+        top_industries = "；".join(
+            f"{item.get('name')}({item.get('count')}): "
+            + "、".join(f"{stock.get('name')}({stock.get('code')})" + ("一字" if stock.get("is_one_word_board") else "") for stock in item.get("stocks", [])[:8])
+            for item in data.get("top_limitup_industries", [])[:3]
+        )
         one_word = "、".join(f"{x['name']}({x['code']})" for x in data.get("one_word_boards", [])[:8])
         lines.append(
             f"涨停池：涨停 {data.get('count')} 只，一字板 {data.get('one_word_count', 0)} 只，"
-            f"行业集中：{industries or '无'}。一字板样例：{one_word or '无'}。"
+            f"行业集中：{industries or '无'}。前三板块个股：{top_industries or '无'}。一字板样例：{one_word or '无'}。"
         )
     north = sources.get("北向资金")
     if north and north.ok:
@@ -1545,6 +1778,7 @@ def build_raw_digest(results: list[SourceResult]) -> str:
             f"中信合计 多{zx.get('long_value', 0)}/空{zx.get('short_value', 0)}/净{zx.get('net_value', 0)}；"
             f"重点机构合计 多{inst.get('long_value', 0)}/空{inst.get('short_value', 0)}/净{inst.get('net_value', 0)}。"
             f"中信分品种：{zhongxin_text or '未命中'}。"
+            + (f"诊断：{data.get('empty_reason')}。" if data.get("empty_reason") else "")
         )
     commodities = sources.get("材料雷达") or sources.get("商品价格")
     if commodities and commodities.ok:
