@@ -12,6 +12,7 @@ import math
 import multiprocessing as mp
 import os
 import re
+import signal
 import time
 import traceback
 import urllib.request
@@ -81,7 +82,6 @@ THEME_KEYWORDS = [
     "氮化镓",
     "铟",
     "氧化锆",
-    "石油",
     "光刻胶",
     "石英砂",
     "钨",
@@ -94,7 +94,7 @@ SOURCE_TIMEOUTS = {
     "同花顺热点": 15,
     "北向资金": 15,
     "涨停池": 25,
-    "材料雷达": 24,
+    "材料雷达": 45,
     "金属快讯": 15,
     "财联社快讯": 9,
     "产业新闻": 15,
@@ -115,27 +115,25 @@ WATCHLIST = {
 
 FOCUS_TOPICS = {
     "宁德相关": ["宁德", "宁德时代", "CATL", "电池", "储能", "麒麟电池", "神行电池"],
-    "英伟达相关": ["英伟达", "NVIDIA", "GB200", "GB300", "Rubin", "Blackwell", "NVL", "CUDA"],
+    "美股科技": ["英伟达", "NVIDIA", "GB200", "GB300", "Rubin", "Blackwell", "NVL", "CUDA", "Apple", "Microsoft", "Alphabet", "Amazon", "Meta", "Tesla"],
     "半导体上游材料": ["半导体", "光刻胶", "电子特气", "氦气", "氦", "硅片", "CMP", "ABF", "InP", "GaAs", "前驱体"],
     "亿纬锂能": ["亿纬锂能", "半年报", "业绩预告", "电池", "储能"],
 }
 
 FOCUS_EVENT_GROUPS = {
     "宁德时代": ["宁德", "宁德时代", "CATL", "枧下窝", "锂矿", "复产", "储能", "电池"],
-    "英伟达": ["NVIDIA", "英伟达", "Rubin", "45摄氏度", "液冷", "GB200", "GB300", "Blackwell"],
+    "美股科技": ["NVIDIA", "英伟达", "Rubin", "45摄氏度", "液冷", "GB200", "GB300", "Blackwell", "苹果", "Apple", "AAPL", "微软", "Microsoft", "MSFT", "谷歌", "Alphabet", "GOOGL", "亚马逊", "Amazon", "AMZN", "NVDA", "Meta", "META", "特斯拉", "Tesla", "TSLA", "财报", "业绩", "指引", "资本开支"],
     "半导体上游材料": ["日本酸素", "氦气", "氦", "光刻胶", "电子特气", "断供", "涨价", "六氟化钨"],
     "亿纬锂能": ["亿纬锂能", "半年报", "业绩预告", "电池", "储能"],
     "美国宏观与美联储": ["美国", "美联储", "Fed", "FOMC", "降息", "加息", "利率", "CPI", "PCE", "非农", "失业率", "初请", "ISM", "GDP", "美债", "美元"],
-    "美股七姐妹": ["苹果", "Apple", "AAPL", "微软", "Microsoft", "MSFT", "谷歌", "Alphabet", "GOOGL", "亚马逊", "Amazon", "AMZN", "英伟达", "NVIDIA", "NVDA", "Meta", "META", "特斯拉", "Tesla", "TSLA", "财报", "业绩", "指引", "资本开支"],
 }
 
 FOCUS_EVENT_ANCHORS = {
     "宁德时代": ["宁德", "宁德时代", "CATL", "枧下窝"],
-    "英伟达": ["NVIDIA", "英伟达", "Rubin", "GB200", "GB300", "Blackwell"],
+    "美股科技": ["NVIDIA", "英伟达", "Rubin", "GB200", "GB300", "Blackwell", "苹果", "Apple", "AAPL", "微软", "Microsoft", "MSFT", "谷歌", "Alphabet", "GOOGL", "亚马逊", "Amazon", "AMZN", "NVDA", "Meta", "META", "特斯拉", "Tesla", "TSLA"],
     "半导体上游材料": ["日本酸素", "氦气", "氦", "光刻胶", "电子特气", "六氟化钨"],
     "亿纬锂能": ["亿纬", "亿纬锂能", "EVE"],
     "美国宏观与美联储": ["美国", "美联储", "Fed", "FOMC", "CPI", "PCE", "非农", "失业率", "初请", "ISM", "GDP", "美债"],
-    "美股七姐妹": ["苹果", "Apple", "AAPL", "微软", "Microsoft", "MSFT", "谷歌", "Alphabet", "GOOGL", "亚马逊", "Amazon", "AMZN", "英伟达", "NVIDIA", "NVDA", "Meta", "META", "特斯拉", "Tesla", "TSLA"],
 }
 
 FOREIGN_ORG_KEYWORDS = [
@@ -239,7 +237,7 @@ MATERIAL_CONFIG = [
         "unit": "元/吨",
         "tightness": "中性偏紧",
         "expansion": "中等：资源、盐湖/矿山和爬坡周期约束较强",
-        "related_codes": ["002466", "002460", "300750", "002756"],
+        "related_codes": ["002466", "002460", "300750", "002756", "002192", "002240", "002176", "000762", "603399", "000792"],
     },
     {
         "name": "VC电解液",
@@ -247,7 +245,7 @@ MATERIAL_CONFIG = [
         "keywords": ["VC", "电解液", "添加剂", "碳酸亚乙烯酯"],
         "tightness": "跟随电解液需求和装置开工变化",
         "expansion": "中等：化工合成壁垒不极高，但客户认证和环保约束重要",
-        "related_codes": ["002709", "300037", "300073", "002407"],
+        "related_codes": ["002709", "300037", "300073", "002407", "688353"],
     },
     {
         "name": "六氟磷酸锂",
@@ -255,7 +253,7 @@ MATERIAL_CONFIG = [
         "keywords": ["六氟磷酸锂", "LiPF6", "电解质", "六氟"],
         "tightness": "周期弹性高，需跟踪价格和库存拐点",
         "expansion": "中等偏难：氟化工、安全环保和客户认证影响扩产",
-        "related_codes": ["002709", "002407", "002326", "300037"],
+        "related_codes": ["002709", "002407", "002326", "300037", "002759"],
     },
     {
         "name": "氦气",
@@ -263,7 +261,7 @@ MATERIAL_CONFIG = [
         "keywords": ["氦气", "氦", "Helium"],
         "tightness": "偏紧：海外气源、LNG副产和运输约束明显",
         "expansion": "难：资源禀赋决定供给，新增产能周期长",
-        "related_codes": ["603318", "002549", "688146", "688267"],
+        "related_codes": ["603318", "002549", "688146", "688267", "688268", "002971", "688106"],
     },
     {
         "name": "六氟化钨",
@@ -271,7 +269,7 @@ MATERIAL_CONFIG = [
         "keywords": ["六氟化钨", "WF6", "钨前驱体", "钨"],
         "tightness": "需跟踪先进制程和存储扩产需求",
         "expansion": "难：高纯工艺、客户认证和安全环保门槛高",
-        "related_codes": ["688146", "688268", "002409", "600360"],
+        "related_codes": ["688146", "688268", "002409", "600360", "600378", "688549"],
     },
     {
         "name": "磷化铟",
@@ -279,23 +277,15 @@ MATERIAL_CONFIG = [
         "keywords": ["磷化铟", "InP", "铟磷"],
         "tightness": "偏紧：受光通信和射频需求拉动",
         "expansion": "难：晶体生长、衬底良率和认证周期长",
-        "related_codes": ["600703", "300394", "300308", "300502"],
+        "related_codes": ["002428", "600141", "600206"],
     },
     {
-        "name": "铋",
-        "category": "小金属",
-        "keywords": ["铋", "金属铋", "秘"],
-        "tightness": "需跟踪小金属价格和出口变化",
-        "expansion": "中等偏难：多为伴生资源，供给弹性有限",
-        "related_codes": ["600497", "000960", "600531"],
-    },
-    {
-        "name": "锑",
-        "category": "小金属/阻燃",
-        "keywords": ["锑", "锑矿", "三氧化二锑"],
-        "tightness": "偏紧：矿端集中，政策和出口扰动敏感",
-        "expansion": "难：资源约束强，新矿开发周期长",
-        "related_codes": ["600301", "002155", "000960"],
+        "name": "小金属综合",
+        "category": "小金属/半导体材料",
+        "keywords": ["铋", "金属铋", "秘", "锑", "锑矿", "三氧化二锑", "铟", "金属铟", "ITO", "氧化锆", "锆", "锆英砂"],
+        "tightness": "关注出口管制、伴生资源和小金属库存变化",
+        "expansion": "中等偏难：多为伴生资源，新增供给弹性有限",
+        "related_codes": ["600497", "000960", "600531", "600301", "002155", "000060", "000878", "600362", "002167", "002149", "300224"],
     },
     {
         "name": "氮化镓",
@@ -306,39 +296,20 @@ MATERIAL_CONFIG = [
         "related_codes": ["600703", "688234", "300373", "300102"],
     },
     {
-        "name": "铟",
-        "category": "小金属/化合物半导体",
-        "keywords": ["铟", "金属铟", "ITO"],
-        "tightness": "偏紧：伴生资源，光电和半导体需求扰动大",
-        "expansion": "难：伴生属性强，新增供给弹性有限",
-        "related_codes": ["000060", "000878", "600362"],
-    },
-    {
-        "name": "氧化锆",
-        "category": "陶瓷/小金属",
-        "keywords": ["氧化锆", "锆", "锆英砂"],
-        "tightness": "需跟踪锆系价格和陶瓷/新能源需求",
-        "expansion": "中等：矿端和高纯加工能力共同约束",
-        "related_codes": ["002167", "002149", "300224"],
-    },
-    {
-        "name": "石油",
-        "category": "能源化工",
-        "keywords": ["石油", "原油", "油价", "OPEC"],
-        "futures_symbol": "原油",
-        "inventory_symbol": "原油",
-        "unit": "元/桶",
-        "tightness": "受地缘、OPEC供给和库存周期驱动",
-        "expansion": "难：上游资本开支和地缘因素影响大",
-        "related_codes": ["600028", "601857", "600938", "600256"],
-    },
-    {
         "name": "光刻胶",
         "category": "半导体材料",
         "keywords": ["光刻胶", "日本光刻胶", "KrF", "ArF", "EUV"],
         "tightness": "高端品类偏紧，海外供应扰动敏感",
         "expansion": "难：配方、验证、客户导入和稳定性门槛高",
-        "related_codes": ["603650", "300054", "688199", "300576"],
+        "related_codes": ["603650", "300054", "688199", "300576", "300346", "002643"],
+    },
+    {
+        "name": "半导体硅片",
+        "category": "半导体材料",
+        "keywords": ["半导体硅片", "硅片", "硅材料", "大硅片", "抛光片", "外延片"],
+        "tightness": "关注存储和先进制程扩产带来的硅片需求变化",
+        "expansion": "难：晶体生长、良率、客户认证和产线爬坡周期较长",
+        "related_codes": ["688126", "605358", "002129", "688233", "688432"],
     },
     {
         "name": "石英砂",
@@ -475,6 +446,23 @@ def trend_label(change_pct: float | None) -> str:
     if value < 0:
         return "小幅回落"
     return "持平/暂无变化"
+
+
+def call_with_alarm(fn: Callable[[], Any], timeout_s: int, label: str) -> Any:
+    if not hasattr(signal, "SIGALRM"):
+        return fn()
+
+    def _handler(signum: int, frame: Any) -> None:
+        raise TimeoutError(f"{label} 超过 {timeout_s}s 未返回")
+
+    previous = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, _handler)
+    signal.alarm(timeout_s)
+    try:
+        return fn()
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def get_prefix(code: str) -> str:
@@ -1044,7 +1032,12 @@ def collect_material_radar() -> dict[str, Any]:
     if ak is None:
         raise RuntimeError("akshare is not installed")
     all_codes = sorted({code for item in MATERIAL_CONFIG for code in item.get("related_codes", [])})
-    quote_map = tencent_quote(all_codes)
+    quote_error = None
+    try:
+        quote_map = call_with_alarm(lambda: tencent_quote(all_codes), 12, "材料相关A股行情")
+    except Exception as exc:
+        quote_error = f"{type(exc).__name__}: {str(exc)[:160]}"
+        quote_map = {}
     items = []
     for config in MATERIAL_CONFIG:
         price_enabled = config["name"] == "碳酸锂"
@@ -1053,7 +1046,7 @@ def collect_material_radar() -> dict[str, Any]:
         status = "no_realtime_source"
         if price_enabled and config.get("futures_symbol"):
             try:
-                df = ak.futures_zh_realtime(symbol=config["futures_symbol"])
+                df = call_with_alarm(lambda: ak.futures_zh_realtime(symbol=config["futures_symbol"]), 8, f"{config['name']}期货")
                 rows = jsonable(df) or []
                 contract = pick_realtime_contract(rows, config)
                 if contract:
@@ -1074,7 +1067,10 @@ def collect_material_radar() -> dict[str, Any]:
                 status = "fail"
         inventory = None
         if price_enabled and config.get("inventory_symbol"):
-            inventory = collect_material_inventory(config["inventory_symbol"])
+            try:
+                inventory = call_with_alarm(lambda: collect_material_inventory(config["inventory_symbol"]), 8, f"{config['name']}库存")
+            except Exception as exc:
+                inventory = {"source": f"akshare.futures_inventory_em({config['inventory_symbol']})", "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
         related = [quote_map[code] for code in config.get("related_codes", []) if code in quote_map]
         items.append(
             {
@@ -1089,6 +1085,7 @@ def collect_material_radar() -> dict[str, Any]:
                 "base_tightness": config["tightness"],
                 "expansion": config["expansion"],
                 "related_stocks": related,
+                "quote_error": quote_error,
                 "coverage": "有期货/库存直连" if price_enabled and (price or inventory) else ("碳酸锂价格/库存暂不可用" if price_enabled else "仅展示相关 A 股和消息"),
             }
         )
@@ -1294,7 +1291,7 @@ def build_focus_items(sources: dict[str, SourceResult]) -> list[str]:
     if watch and watch.ok:
         mapping = {
             "宁德相关": ["储能锂矿"],
-            "英伟达相关": ["英伟达/AI算力"],
+            "美股科技": ["英伟达/AI算力"],
             "半导体上游材料": ["半导体材料"],
         }
         for topic, themes in mapping.items():
@@ -1545,7 +1542,7 @@ def build_material_radar_module(sources: dict[str, SourceResult]) -> dict[str, A
                 "expansion": row.get("expansion"),
                 "coverage": row.get("coverage"),
                 "news": hits[:3],
-                "related_stocks": related[:5],
+                "related_stocks": related[:12],
             }
         )
     order = {"紧缺/供给扰动": 0, "价格偏强/偏紧": 1, "价格明显上行": 2}
@@ -1657,16 +1654,16 @@ def build_reports_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
         "title": "主题研报精华",
         "summary": "近三天研报/链接 + 海外机构观点线索 + 中金全局研报 + 指定分析师精确跟踪。",
         "groups": [
-            {"name": "近三天研报/链接", "items": items},
-            {"name": "海外机构观点线索", "items": overseas},
             {"name": "中金全局研报", "items": cicc},
             {"name": "指定分析师跟踪", "items": analyst_group},
+            {"name": "近三天研报/链接", "items": items},
+            {"name": "海外机构观点线索", "items": overseas},
         ],
         "reports": items,
         "overseas_opinions": overseas,
         "cicc_reports": cicc,
         "analyst_reports": analyst_hits,
-        "items": [f"{x.get('date')} / {x.get('org')} / {x.get('sentiment')} / {x.get('rating')} / {x.get('industry')}：{x.get('title')}" for x in items + overseas + cicc + analyst_hits]
+        "items": [f"{x.get('date')} / {x.get('org')} / {x.get('sentiment')} / {x.get('rating')} / {x.get('industry')}：{x.get('title')}" for x in cicc + analyst_hits + items + overseas]
         or ["暂无主题研报命中。"],
     }
 
@@ -1689,7 +1686,7 @@ def build_focus_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     return {
         "type": "focus_groups",
         "title": "重点公司/产业消息",
-        "summary": "近48小时公告与消息；覆盖重点公司/产业、美国宏观与美联储、美股七姐妹财报消息。",
+        "summary": "近48小时公告与消息；覆盖重点公司/产业、美国宏观与美联储、美股科技财报消息。",
         "groups": groups,
         "items": raw_items,
     }

@@ -93,7 +93,7 @@
       const price = item.price;
       const inventory = item.inventory || {};
       const fullPrice = item.display_type === 'full_price_inventory';
-      const stocks = (item.related_stocks || []).slice(0, 4).map(s => `
+      const stocks = (item.related_stocks || []).slice(0, 12).map(s => `
         <span class="chip">${escapeHtml(s.name)} ${pct(s.change_pct)}</span>
       `).join('');
       const news = (item.news || []).slice(0, 2).map(n => `
