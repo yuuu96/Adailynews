@@ -93,14 +93,18 @@
       const price = item.price;
       const inventory = item.inventory || {};
       const fullPrice = item.display_type === 'full_price_inventory';
-      const stocks = (item.related_stocks || []).slice(0, 12).map(s => `
+      const allStocks = item.related_stocks || [];
+      const stockLimit = fullPrice ? 8 : 6;
+      const stocks = allStocks.slice(0, stockLimit).map(s => `
         <span class="chip">${escapeHtml(s.name)} ${pct(s.change_pct)}</span>
       `).join('');
-      const news = (item.news || []).slice(0, 2).map(n => `
+      const moreStocks = allStocks.length > stockLimit ? `<span class="chip chip-more">+${allStocks.length - stockLimit}</span>` : '';
+      const stockRow = stocks || moreStocks ? `${stocks}${moreStocks}` : '<span class="small">暂无行情</span>';
+      const news = (item.news || []).slice(0, fullPrice ? 2 : 1).map(n => `
         <div class="item-text">${escapeHtml(n.source || '')}：${linkify(n.text || '')}${n.link ? ` <a href="${escapeHtml(n.link)}" target="_blank" rel="noopener noreferrer">链接</a>` : ''}</div>
       `).join('');
       return `
-        <div class="material-card">
+        <div class="material-card ${fullPrice ? 'featured' : 'compact'}">
           <div class="material-top">
             <div>
               <h3>${escapeHtml(item.name)}</h3>
@@ -108,13 +112,20 @@
             </div>
             <span class="pill ${String(item.tightness || '').includes('紧') || String(item.tightness || '').includes('上行') ? 'hot' : ''}">${escapeHtml(item.tightness || 'NA')}</span>
           </div>
-          <div class="material-facts">
-            ${fullPrice ? `<div class="fact"><span>价格走势</span><strong>${price ? `${fmt(price.price)} ${escapeHtml(price.unit || '')} · ${pct(price.change_pct)} · ${escapeHtml(price.trend || '')}` : escapeHtml(item.coverage || '暂无')}</strong></div>` : ''}
-            ${fullPrice ? `<div class="fact"><span>库存/仓单</span><strong>${inventory && inventory.value ? `${fmt(inventory.value)} ${inventory.change ? `(${fmt(inventory.change)})` : ''}` : (inventory && inventory.error ? escapeHtml(inventory.error) : '暂无直连数据')}</strong></div>` : ''}
-            <div class="fact"><span>扩产难度</span><strong>${escapeHtml(item.expansion || 'NA')}</strong></div>
-            <div class="fact"><span>相关 A 股</span><strong>${stocks || '暂无行情'}</strong></div>
-          </div>
-          ${news ? `<div class="news-list" style="margin-top:8px">${news}</div>` : ''}
+          ${fullPrice ? `
+            <div class="material-facts">
+              <div class="fact"><span>价格走势</span><strong>${price ? `${fmt(price.price)} ${escapeHtml(price.unit || '')} · ${pct(price.change_pct)} · ${escapeHtml(price.trend || '')}` : escapeHtml(item.coverage || '暂无')}</strong></div>
+              <div class="fact"><span>库存/仓单</span><strong>${inventory && inventory.value ? `${fmt(inventory.value)} ${inventory.change ? `(${fmt(inventory.change)})` : ''}` : (inventory && inventory.error ? escapeHtml(inventory.error) : '暂无直连数据')}</strong></div>
+              <div class="fact"><span>扩产难度</span><strong>${escapeHtml(item.expansion || 'NA')}</strong></div>
+              <div class="fact"><span>相关 A 股</span><div class="chip-row compact">${stockRow}</div></div>
+            </div>
+          ` : `
+            <div class="material-compact-body">
+              <div class="chip-row compact">${stockRow}</div>
+              <div class="material-note">${escapeHtml(item.expansion || 'NA')}</div>
+            </div>
+          `}
+          ${news ? `<div class="news-list material-news">${news}</div>` : ''}
         </div>
       `;
     }).join('');
