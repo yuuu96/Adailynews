@@ -285,9 +285,25 @@ button.chip-more[aria-expanded="true"] {
 }
 .material-card.compact h3 {
   font-size: 15px;
+  white-space: nowrap;
 }
 .material-card.compact .material-top {
   gap: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.material-card.compact .material-top > div:first-child {
+  min-width: 0;
+}
+.material-card.compact .material-top .small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.material-card.compact .pill {
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .material-top {
   display: flex;
