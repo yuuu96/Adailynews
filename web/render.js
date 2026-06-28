@@ -94,7 +94,7 @@
       const inventory = item.inventory || {};
       const fullPrice = item.display_type === 'full_price_inventory';
       const allStocks = item.related_stocks || [];
-      const stockLimit = fullPrice ? 8 : 5;
+      const stockLimit = fullPrice ? allStocks.length : 5;
       const visibleStocks = allStocks.slice(0, stockLimit).map(s => `
         <span class="chip">${escapeHtml(s.name)} ${pct(s.change_pct)}</span>
       `).join('');
@@ -117,16 +117,18 @@
             <span class="pill ${String(item.tightness || '').includes('紧') || String(item.tightness || '').includes('上行') ? 'hot' : ''}">${escapeHtml(item.tightness || 'NA')}</span>
           </div>
           ${fullPrice ? `
-            <div class="material-facts">
-              <div class="fact"><span>价格走势</span><strong>${price ? `${fmt(price.price)} ${escapeHtml(price.unit || '')} · ${pct(price.change_pct)} · ${escapeHtml(price.trend || '')}` : escapeHtml(item.coverage || '暂无')}</strong></div>
-              <div class="fact"><span>库存/仓单</span><strong>${inventory && inventory.value ? `${fmt(inventory.value)} ${inventory.change ? `(${fmt(inventory.change)})` : ''}` : (inventory && inventory.error ? escapeHtml(inventory.error) : '暂无直连数据')}</strong></div>
-              <div class="fact"><span>扩产难度</span><strong>${escapeHtml(item.expansion || 'NA')}</strong></div>
-              <div class="fact"><span>相关 A 股</span><div class="chip-row compact">${stockRow}</div></div>
+            <div class="material-featured-layout">
+              <div class="material-metrics-column">
+                <div class="fact"><span>价格走势</span><strong>${price ? `${fmt(price.price)} ${escapeHtml(price.unit || '')}<br>${pct(price.change_pct)} · ${escapeHtml(price.trend || '')}` : escapeHtml(item.coverage || '暂无')}</strong></div>
+                <div class="fact"><span>库存/仓单</span><strong>${inventory && inventory.value ? `${fmt(inventory.value)} ${inventory.change ? `(${fmt(inventory.change)})` : ''}` : (inventory && inventory.error ? escapeHtml(inventory.error) : '暂无直连数据')}</strong></div>
+              </div>
+              <div class="fact material-stocks-wide"><span>相关 A 股</span><div class="chip-row compact expanded">${stockRow}</div></div>
+              <div class="fact material-expansion-wide"><span>扩产难度</span><strong>${escapeHtml(item.expansion || 'NA')}</strong></div>
             </div>
           ` : `
             <div class="material-compact-body">
-              <div class="chip-row compact">${stockRow}</div>
-              <div class="material-note">${escapeHtml(item.expansion || 'NA')}</div>
+              <div class="material-inline-row"><span>相关 A 股</span><div class="chip-row compact">${stockRow}</div></div>
+              <div class="material-inline-row"><span>扩产难度</span><strong>${escapeHtml(item.expansion || 'NA')}</strong></div>
             </div>
           `}
           ${news ? `<div class="news-list material-news">${news}</div>` : ''}

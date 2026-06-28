@@ -166,26 +166,6 @@ FOCUS_STOCKS = {
     "300014": "亿纬锂能",
 }
 
-CICC_GLOBAL_KEYWORDS = [
-    "大盘",
-    "策略",
-    "市场",
-    "指数",
-    "科技",
-    "AI",
-    "算力",
-    "半导体",
-    "电子",
-    "宏观",
-    "经济",
-    "利率",
-    "流动性",
-    "政策",
-    "海外",
-    "美联储",
-    "降息",
-]
-
 TRACKED_ANALYSTS = [
     {"sector": "传媒", "broker": "广发", "aliases": ["旷石", "钻石"]},
     {"sector": "医药", "broker": "中信建投", "aliases": ["贺菊颖"]},
@@ -900,12 +880,10 @@ def dedup_reports(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any
     return deduped[:limit]
 
 
-def is_cicc_global_report(row: dict[str, Any]) -> bool:
+def is_cicc_daily_report(row: dict[str, Any]) -> bool:
     text = text_from_record(row)
     org = str(row.get("orgSName") or "")
-    if not any(keyword.upper() in f"{org} {text}".upper() for keyword in ["中金", "CICC"]):
-        return False
-    return is_keyword_hit(text, CICC_GLOBAL_KEYWORDS)
+    return any(keyword.upper() in f"{org} {text}".upper() for keyword in ["中金", "CICC"])
 
 
 def match_tracked_analysts(row: dict[str, Any]) -> list[dict[str, Any]]:
@@ -964,8 +942,8 @@ def collect_reports() -> dict[str, Any]:
             item = normalize_report_item(row)
             sentiment_counter[item["sentiment"]] += 1
             theme_hits.append(item)
-        if is_cicc_global_report(row):
-            cicc_hits.append(normalize_report_item(row, kind="中金全局研报"))
+        if is_cicc_daily_report(row):
+            cicc_hits.append(normalize_report_item(row, kind="中金每日研报"))
         for target in match_tracked_analysts(row):
             analyst_name = "/".join(target["aliases"])
             item = normalize_report_item(row, kind="指定分析师研报", analyst=analyst_name)
@@ -1647,9 +1625,9 @@ def build_reports_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     return {
         "type": "reports",
         "title": "主题研报精华",
-        "summary": "近三天研报/链接 + 海外机构观点线索 + 中金全局研报 + 指定分析师精确跟踪。",
+        "summary": "近三天研报/链接 + 海外机构观点线索 + 中金每日研报 + 指定分析师精确跟踪。",
         "groups": [
-            {"name": "中金全局研报", "items": cicc},
+            {"name": "中金每日研报", "items": cicc},
             {"name": "指定分析师跟踪", "items": analyst_group},
             {"name": "近三天研报/链接", "items": items},
             {"name": "海外机构观点线索", "items": overseas},

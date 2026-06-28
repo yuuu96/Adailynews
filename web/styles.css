@@ -307,16 +307,48 @@ button.chip-more[aria-expanded="true"] {
   background: #eadbd7;
   color: var(--red);
 }
-.material-facts {
+.material-facts, .material-featured-layout {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 8px;
   margin-top: 8px;
 }
+.material-featured-layout {
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+  align-items: stretch;
+}
+.material-metrics-column {
+  display: grid;
+  gap: 8px;
+}
+.material-stocks-wide {
+  min-width: 0;
+}
+.material-expansion-wide {
+  grid-column: 1 / -1;
+}
 .material-compact-body {
   display: grid;
   gap: 6px;
   margin-top: 7px;
+}
+.material-inline-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+}
+.material-inline-row > span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: nowrap;
+}
+.material-inline-row > strong {
+  color: #4a4540;
+  font-size: 12px;
+  line-height: 1.65;
 }
 .chip-row.compact {
   gap: 5px;
@@ -442,7 +474,7 @@ a:hover { text-decoration: underline; }
 @media (max-width: 520px) {
   main { padding: 12px; }
   section, details, .soft-panel { padding: 12px; }
-  .metric-grid, .material-facts, .stock-grid {
+  .metric-grid, .material-facts, .material-featured-layout, .stock-grid {
     grid-template-columns: 1fr;
   }
   .material-grid {
