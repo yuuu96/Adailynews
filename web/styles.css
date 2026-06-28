@@ -391,12 +391,12 @@ button.chip-more[aria-expanded="true"] {
 .material-news {
   margin-top: 7px;
 }
-.material-card.compact .item-text {
+.material-news .item-text {
   margin-top: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: block;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
 }
 .fact {
   background: var(--soft);

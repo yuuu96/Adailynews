@@ -104,7 +104,7 @@
       const hiddenCount = Math.max(allStocks.length - stockLimit, 0);
       const moreStocks = hiddenCount ? `<button type="button" class="chip chip-more" data-material-toggle data-count="${hiddenCount}" aria-expanded="false">+${hiddenCount}</button>` : '';
       const stockRow = visibleStocks || hiddenStocks || moreStocks ? `${visibleStocks}${hiddenStocks}${moreStocks}` : '<span class="small">暂无行情</span>';
-      const news = (item.news || []).slice(0, fullPrice ? 2 : 1).map(n => `
+      const news = (item.news || []).map(n => `
         <div class="item-text">${escapeHtml(n.source || '')}：${linkify(n.text || '')}${n.link ? ` <a href="${escapeHtml(n.link)}" target="_blank" rel="noopener noreferrer">链接</a>` : ''}</div>
       `).join('');
       return `
