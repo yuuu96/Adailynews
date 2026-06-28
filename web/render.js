@@ -122,8 +122,10 @@
                 <div class="fact"><span>价格走势</span><strong>${price ? `${fmt(price.price)} ${escapeHtml(price.unit || '')}<br>${pct(price.change_pct)} · ${escapeHtml(price.trend || '')}` : escapeHtml(item.coverage || '暂无')}</strong></div>
                 <div class="fact"><span>库存/仓单</span><strong>${inventory && inventory.value ? `${fmt(inventory.value)} ${inventory.change ? `(${fmt(inventory.change)})` : ''}` : (inventory && inventory.error ? escapeHtml(inventory.error) : '暂无直连数据')}</strong></div>
               </div>
-              <div class="fact material-stocks-wide"><span>相关 A 股</span><div class="chip-row compact expanded">${stockRow}</div></div>
-              <div class="fact material-expansion-wide"><span>扩产难度</span><strong>${escapeHtml(item.expansion || 'NA')}</strong></div>
+              <div class="material-featured-main">
+                <div class="fact material-expansion-wide"><span>扩产难度</span><strong>${escapeHtml(item.expansion || 'NA')}</strong></div>
+                <div class="fact material-stocks-wide"><span>相关 A 股</span><div class="chip-row compact expanded">${stockRow}</div></div>
+              </div>
             </div>
           ` : `
             <div class="material-compact-body">

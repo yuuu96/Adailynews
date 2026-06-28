@@ -268,14 +268,14 @@ button.chip-more[aria-expanded="true"] {
   display: grid;
   grid-template-columns: 1fr;
   gap: 9px;
-  align-items: start;
+  align-items: stretch;
 }
 .material-card {
   border: 1px solid #ded5cc;
   border-radius: 8px;
   padding: 9px;
   background: #fffdf8;
-  align-self: start;
+  align-self: stretch;
 }
 .material-card.featured {
   grid-column: 1 / -1;
@@ -321,14 +321,21 @@ button.chip-more[aria-expanded="true"] {
   display: grid;
   gap: 8px;
 }
+.material-featured-main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 8px;
+  min-width: 0;
+}
 .material-stocks-wide {
   min-width: 0;
 }
 .material-expansion-wide {
-  grid-column: 1 / -1;
+  min-width: 0;
 }
 .material-compact-body {
   display: grid;
+  grid-template-rows: auto 1fr;
   gap: 6px;
   margin-top: 7px;
 }
