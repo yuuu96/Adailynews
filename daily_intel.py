@@ -17,10 +17,12 @@ import time
 import traceback
 import urllib.request
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout, as_completed
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -41,6 +43,7 @@ LATEST_JSON = REPORT_DIR / "latest.json"
 LATEST_MD = REPORT_DIR / "latest.md"
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+CN_TZ = ZoneInfo("Asia/Shanghai")
 THEME_KEYWORDS = [
     "宁德",
     "宁德时代",
@@ -101,7 +104,7 @@ SOURCE_TIMEOUTS = {
     "重点公告": 18,
     "机构研报": 35,
     "期指席位": 45,
-    "产业链行情": 15,
+    "产业链行情": 30,
 }
 
 SOURCE_DEFS: list[tuple[str, Callable[[], Any]]] = []
@@ -410,6 +413,26 @@ def safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def now_cn() -> datetime:
+    return datetime.now(CN_TZ)
+
+
+def now_cn_naive() -> datetime:
+    return now_cn().replace(tzinfo=None)
+
+
+def today_cn() -> date:
+    return now_cn().date()
+
+
+def closed_daily_cutoff(now: datetime | None = None) -> date:
+    current = now or now_cn()
+    cutoff = current.date()
+    if current.hour < 15 or (current.hour == 15 and current.minute < 10):
+        cutoff -= timedelta(days=1)
+    return cutoff
+
+
 def trend_label(change_pct: float | None) -> str:
     value = safe_float(change_pct, 0)
     if value >= 3:
@@ -480,11 +503,125 @@ def tencent_quote(codes: list[str]) -> dict[str, dict[str, Any]]:
     return result
 
 
+def fetch_tencent_daily_close(code: str, cutoff: date) -> dict[str, Any] | None:
+    prefixed = f"{get_prefix(code)}{code}"
+    url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={prefixed},day,,,8,qfq"
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": "https://gu.qq.com/"})
+    payload = json.loads(urllib.request.urlopen(req, timeout=8).read().decode("utf-8", errors="ignore"))
+    node = (payload.get("data") or {}).get(prefixed) or {}
+    rows = node.get("qfqday") or []
+    closed_rows = [row for row in rows if row and str(row[0]) <= cutoff.isoformat()]
+    if len(closed_rows) < 2:
+        return None
+    latest = closed_rows[-1]
+    previous = closed_rows[-2]
+    close_price = safe_float(latest[2])
+    previous_close = safe_float(previous[2])
+    if not close_price or not previous_close:
+        return None
+    return {
+        "price": close_price,
+        "change_pct": round((close_price / previous_close - 1) * 100, 2),
+        "quote_date": str(latest[0])[:10],
+        "quote_source": "腾讯日线收盘",
+    }
+
+
+def collect_tencent_daily_close_overrides(codes: list[str], max_seconds: int = 12) -> dict[str, dict[str, Any]]:
+    if not codes:
+        return {}
+    cutoff = closed_daily_cutoff()
+    overrides: dict[str, dict[str, Any]] = {}
+    executor = ThreadPoolExecutor(max_workers=min(8, len(codes)))
+    futures = {executor.submit(fetch_tencent_daily_close, code, cutoff): code for code in codes}
+    try:
+        for future in as_completed(futures, timeout=max_seconds):
+            code = futures[future]
+            try:
+                value = future.result()
+                if value:
+                    overrides[code] = value
+            except Exception:
+                continue
+    except FuturesTimeout:
+        pass
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    return overrides
+
+
+def collect_akshare_daily_close_overrides(codes: list[str], max_seconds: int = 12) -> dict[str, dict[str, Any]]:
+    if ak is None or not codes:
+        return {}
+    cutoff = closed_daily_cutoff()
+    start = (cutoff - timedelta(days=20)).strftime("%Y%m%d")
+    end = cutoff.strftime("%Y%m%d")
+    deadline = time.monotonic() + max_seconds
+    overrides: dict[str, dict[str, Any]] = {}
+    for code in codes:
+        if time.monotonic() >= deadline:
+            break
+        try:
+            df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start, end_date=end, adjust="")
+            rows = jsonable(df) or []
+            closed_rows = []
+            for row in rows:
+                row_date = str(row.get("日期") or row.get("date") or "")[:10]
+                if row_date and row_date <= cutoff.isoformat():
+                    closed_rows.append(row)
+            if not closed_rows:
+                continue
+            latest = closed_rows[-1]
+            previous = closed_rows[-2] if len(closed_rows) >= 2 else None
+            close_price = safe_float(latest.get("收盘"))
+            change_pct = latest.get("涨跌幅")
+            if change_pct in (None, "", "-") and previous:
+                previous_close = safe_float(previous.get("收盘"))
+                if previous_close:
+                    change_pct = round((close_price / previous_close - 1) * 100, 2)
+            overrides[code] = {
+                "price": close_price,
+                "change_pct": safe_float(change_pct),
+                "amount_yi": round(safe_float(latest.get("成交额")) / 1e8, 2),
+                "turnover_pct": safe_float(latest.get("换手率")),
+                "quote_date": str(latest.get("日期") or "")[:10],
+                "quote_source": "akshare日线收盘",
+            }
+        except Exception:
+            continue
+    return overrides
+
+
+def collect_daily_close_overrides(codes: list[str], max_seconds: int = 12) -> dict[str, dict[str, Any]]:
+    if not codes:
+        return {}
+    started = time.monotonic()
+    overrides = collect_tencent_daily_close_overrides(codes, max_seconds=max(2, int(max_seconds * 0.7)))
+    missing = [code for code in codes if code not in overrides]
+    remaining = max_seconds - int(time.monotonic() - started)
+    if missing and remaining > 2:
+        overrides.update(collect_akshare_daily_close_overrides(missing, max_seconds=remaining))
+    return overrides
+
+
+def apply_daily_close_overrides(quotes: dict[str, dict[str, Any]], max_seconds: int = 12) -> dict[str, dict[str, Any]]:
+    if not quotes:
+        return quotes
+    overrides = collect_daily_close_overrides(sorted(quotes), max_seconds=max_seconds)
+    for code, quote in quotes.items():
+        override = overrides.get(code)
+        if override:
+            quote.update({k: v for k, v in override.items() if v not in (None, "")})
+        else:
+            quote.setdefault("quote_source", "腾讯实时行情")
+    return quotes
+
+
 def collect_watchlist_quotes() -> dict[str, list[dict[str, Any]]]:
     all_codes: list[str] = []
     for codes in WATCHLIST.values():
         all_codes.extend(codes)
-    quotes = tencent_quote(sorted(set(all_codes)))
+    quotes = apply_daily_close_overrides(tencent_quote(sorted(set(all_codes))), max_seconds=10)
     grouped = {}
     for theme, codes in WATCHLIST.items():
         grouped[theme] = [quotes[code] for code in codes if code in quotes]
@@ -493,7 +630,7 @@ def collect_watchlist_quotes() -> dict[str, list[dict[str, Any]]]:
 
 
 def collect_ths_hot() -> dict[str, Any]:
-    today = date.today().strftime("%Y-%m-%d")
+    today = today_cn().strftime("%Y-%m-%d")
     url = f"http://zx.10jqka.com.cn/event/api/getharden/date/{today}/orderby/date/orderway/desc/charset/GBK/"
     r = requests.get(url, headers={"User-Agent": UA}, timeout=12)
     r.raise_for_status()
@@ -541,7 +678,7 @@ def collect_northbound() -> dict[str, Any]:
 def collect_limit_up() -> dict[str, Any]:
     if ak is None:
         raise RuntimeError("akshare is not installed")
-    d = date.today().strftime("%Y%m%d")
+    d = today_cn().strftime("%Y%m%d")
     df = ak.stock_zt_pool_em(date=d)
     rows = jsonable(df) or []
     industry_counter: Counter[str] = Counter()
@@ -649,7 +786,7 @@ def parse_datetime_value(value: Any) -> datetime | None:
     text = re.sub(r"\+\d{2}:\d{2}$", "", text)
     for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y-%m-%d", "%Y/%m/%d", "%Y%m%d"]:
         try:
-            return datetime.strptime(text[: len(datetime.now().strftime(fmt))], fmt)
+            return datetime.strptime(text[: len(now_cn_naive().strftime(fmt))], fmt)
         except Exception:
             pass
     match = re.search(r"(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})", text)
@@ -663,7 +800,7 @@ def is_recent_time(value: Any, hours: int = 48) -> bool:
     dt = parse_datetime_value(value)
     if dt is None:
         return False
-    return dt >= datetime.now() - timedelta(hours=hours)
+    return dt >= now_cn_naive() - timedelta(hours=hours)
 
 
 def normalize_news_item(source: str, row: dict[str, Any]) -> dict[str, Any]:
@@ -782,8 +919,8 @@ def collect_focus_announcements() -> dict[str, Any]:
     if ak is None:
         raise RuntimeError("akshare is not installed")
     items = []
-    start = (date.today() - timedelta(days=2)).strftime("%Y%m%d")
-    end = date.today().strftime("%Y%m%d")
+    start = (today_cn() - timedelta(days=2)).strftime("%Y%m%d")
+    end = today_cn().strftime("%Y%m%d")
     priority_keywords = ["业绩预告", "半年", "半年度", "日常经营", "风险提示", "其他融资", "锂矿", "复产", "储能", "电池"]
     for code, name in FOCUS_STOCKS.items():
         try:
@@ -902,8 +1039,8 @@ def match_tracked_analysts(row: dict[str, Any]) -> list[dict[str, Any]]:
 def collect_reports() -> dict[str, Any]:
     session = requests.Session()
     session.headers.update({"User-Agent": UA, "Referer": "https://data.eastmoney.com/"})
-    begin = (date.today() - timedelta(days=2)).strftime("%Y-%m-%d")
-    end = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+    begin = (today_cn() - timedelta(days=2)).strftime("%Y-%m-%d")
+    end = (today_cn() + timedelta(days=1)).strftime("%Y-%m-%d")
     params = {
         "industryCode": "*",
         "pageSize": "100",
@@ -1007,7 +1144,11 @@ def collect_material_radar() -> dict[str, Any]:
     all_codes = sorted({code for item in MATERIAL_CONFIG for code in item.get("related_codes", [])})
     quote_error = None
     try:
-        quote_map = call_with_alarm(lambda: tencent_quote(all_codes), 12, "材料相关A股行情")
+        quote_map = call_with_alarm(
+            lambda: apply_daily_close_overrides(tencent_quote(all_codes), max_seconds=18),
+            25,
+            "材料相关A股行情",
+        )
     except Exception as exc:
         quote_error = f"{type(exc).__name__}: {str(exc)[:160]}"
         quote_map = {}
@@ -1086,7 +1227,7 @@ def collect_cffex_positions() -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     query_date = ""
     for offset in range(0, 15):
-        query_date = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
+        query_date = (today_cn() - timedelta(days=offset)).strftime("%Y%m%d")
         day_rows: list[dict[str, Any]] = []
         day_notes = []
         for var in target_vars:
@@ -1614,7 +1755,7 @@ def build_reports_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
         analyst_group.append(
             {
                 "kind": "跟踪提示",
-                "date": date.today().isoformat(),
+                "date": today_cn().isoformat(),
                 "org": "指定分析师跟踪",
                 "title": f"近三天无精确命中：{'、'.join(missing[:16])}",
                 "summary": "按分析师姓名精确匹配；不使用券商行业兜底，避免混入噪音。",
@@ -1891,10 +2032,10 @@ def write_report_files(report: dict[str, Any]) -> None:
 
 def emergency_report(error: str, tb: str) -> dict[str, Any]:
     ensure_env()
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    generated_at = now_cn().strftime("%Y-%m-%d %H:%M:%S")
     result = SourceResult("运行异常", False, {"traceback": tb}, error=error, elapsed_ms=0)
     report = {
-        "date": date.today().isoformat(),
+        "date": today_cn().isoformat(),
         "generated_at": generated_at,
         "ai_summary": None,
         "ai_error": "生成流程异常，已输出降级报告",
@@ -1971,9 +2112,9 @@ def generate_report(
                 "error": ai_error,
             }
         )
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    generated_at = now_cn().strftime("%Y-%m-%d %H:%M:%S")
     report = {
-        "date": date.today().isoformat(),
+        "date": today_cn().isoformat(),
         "generated_at": generated_at,
         "ai_summary": ai_summary,
         "ai_error": ai_error,
