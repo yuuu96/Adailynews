@@ -99,19 +99,9 @@
     const renderStockChips = stocks => (stocks || []).slice(0, 8).map(stock => `
       <span class="chip">${escapeHtml(stock.name || '')}${stock.code ? `(${escapeHtml(stock.code)})` : ''} ${pct(stock.change_pct)}</span>
     `).join('');
-    const renderCatalysts = item => (item.catalysts || []).slice(0, 3).map(catalyst => {
-      const link = catalyst.link || catalyst.url || catalyst.pdf_url;
-      const meta = [catalyst.time, catalyst.source, catalyst.evidence_level].filter(Boolean).join(' / ');
-      return `
-        <div class="sector-catalyst">
-          ${meta ? `<div class="item-meta">${escapeHtml(meta)}</div>` : ''}
-          <div class="item-text">${escapeHtml(catalyst.title || '')}${link ? ` <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">链接</a>` : ''}</div>
-        </div>
-      `;
-    }).join('');
     const renderBreakdown = item => {
       const breakdown = item.score_breakdown || {};
-      return ['资金连续性', '题材扩散', '涨停结构', '量价强度', '催化密度', '风险扣分']
+      return ['资金连续性', '题材扩散', '涨停结构', '价格强度', '成交放大', '催化密度', '风险扣分']
         .filter(key => breakdown[key] !== undefined && breakdown[key] !== null)
         .map(key => `<span>${escapeHtml(key)} ${fmt(breakdown[key])}</span>`)
         .join('');
@@ -145,20 +135,6 @@
           <div class="sector-block">
             <span>扩散票</span>
             <div class="chip-row compact">${renderStockChips(item.diffusion_stocks) || '<span class="small">暂无</span>'}</div>
-          </div>
-          <div class="sector-block">
-            <span>短期催化</span>
-            <div class="sector-catalyst-list">${renderCatalysts(item) || '<div class="small">暂无近48小时催化消息。</div>'}</div>
-          </div>
-          <div class="sector-two-col">
-            <div>
-              <div class="small">验证点</div>
-              <ul>${(item.validation_points || []).slice(0, 3).map(x => `<li>${escapeHtml(x)}</li>`).join('') || '<li>暂无</li>'}</ul>
-            </div>
-            <div>
-              <div class="small">风险</div>
-              <ul>${(item.risks || []).slice(0, 3).map(x => `<li>${escapeHtml(x)}</li>`).join('') || '<li>暂无</li>'}</ul>
-            </div>
           </div>
         `}
       </div>

@@ -335,31 +335,6 @@ button.chip-more[aria-expanded="true"] {
   font-size: 12px;
   margin-top: 6px;
 }
-.sector-catalyst-list {
-  display: grid;
-  gap: 5px;
-  margin-top: 5px;
-}
-.sector-catalyst {
-  border-left: 3px solid #d8dfd8;
-  padding-left: 7px;
-}
-.sector-catalyst .item-text {
-  font-size: 12px;
-  line-height: 1.45;
-}
-.sector-two-col {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 6px;
-}
-.sector-two-col ul {
-  margin: 4px 0 0;
-  padding-left: 18px;
-  color: #504942;
-  font-size: 12px;
-}
 .chip.cooling {
   background: #f5ece7;
   border-color: #e1ccc0;
@@ -598,7 +573,7 @@ a:hover { text-decoration: underline; }
 @media (max-width: 520px) {
   main { padding: 12px; }
   section, details, .soft-panel { padding: 12px; }
-  .metric-grid, .material-facts, .material-featured-layout, .stock-grid, .sector-two-col {
+  .metric-grid, .material-facts, .material-featured-layout, .stock-grid {
     grid-template-columns: 1fr;
   }
   .material-grid, .sector-grid, .sector-grid.compact {

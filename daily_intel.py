@@ -1690,7 +1690,6 @@ def base_sector_state(name: str, kind: str = "theme") -> dict[str, Any]:
         "stocks": {},
         "catalysts": [],
         "signals": [],
-        "risks": [],
     }
 
 
@@ -1786,26 +1785,21 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
     industry_span = len(sector["industry_counter"])
 
     flow_days = sector_flow_days(sector["name"], history, {**sector, "amount_yi": amount_yi})
-    flow_score = min(30, flow_days * 5 + min(amount_yi / 18, 10) + hot_stock_count * 0.9 + limit_up_count * 1.5)
-    diffusion_score = min(20, stock_count * 1.5 + tag_count * 0.8 + industry_span * 2.0)
-    limit_score = min(20, limit_up_count * 3 + one_word_count * 2 + safe_float(sector["max_board"]) * 1.5 - break_count * 0.8)
-    price_score = min(15, max(avg_change, 0) * 1.2 + min(amount_yi / 30, 6))
-    catalyst_score = min(15, catalyst_count * 3.5)
+    flow_score = min(20, flow_days * 4 + hot_stock_count * 0.8 + limit_up_count * 1.2)
+    diffusion_score = min(15, stock_count * 1.2 + tag_count * 0.7 + industry_span * 1.5)
+    limit_score = min(15, limit_up_count * 2.4 + one_word_count * 1.8 + safe_float(sector["max_board"]) * 1.2 - break_count * 0.8)
+    price_score = min(20, max(avg_change, 0) * 1.6 + max(limit_up_count, 0) * 0.6)
+    volume_score = min(20, min(amount_yi / 15, 14) + stock_count * 0.8 + hot_stock_count * 0.4)
+    catalyst_score = min(10, catalyst_count * 2.5)
     risk_penalty = 0.0
-    risks = []
     if stock_count <= 1 and (hot_stock_count + limit_up_count) > 0:
         risk_penalty += 4
-        risks.append("单票脉冲，板块扩散不足")
     if avg_change >= 8 and catalyst_count == 0:
         risk_penalty += 5
-        risks.append("短线涨幅较高但催化证据不足")
     if limit_up_count and break_count / max(limit_up_count, 1) >= 0.6:
         risk_penalty += 5
-        risks.append("炸板率偏高，接力风险上升")
-    if not risks:
-        risks.append("需继续验证收入占比、订单和产能兑现")
 
-    score = max(0, min(100, flow_score + diffusion_score + limit_score + price_score + catalyst_score - risk_penalty))
+    score = max(0, min(100, flow_score + diffusion_score + limit_score + price_score + volume_score + catalyst_score - risk_penalty))
     signals = []
     if flow_days >= 2:
         signals.append(f"连续{flow_days}日增强")
@@ -1839,7 +1833,8 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
             "资金连续性": round(flow_score, 1),
             "题材扩散": round(diffusion_score, 1),
             "涨停结构": round(limit_score, 1),
-            "量价强度": round(price_score, 1),
+            "价格强度": round(price_score, 1),
+            "成交放大": round(volume_score, 1),
             "催化密度": round(catalyst_score, 1),
             "风险扣分": round(risk_penalty, 1),
         },
@@ -1848,18 +1843,7 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
         "evidence_level": evidence_level,
         "core_stocks": core_stocks,
         "diffusion_stocks": diffusion_stocks,
-        "catalysts": sector["catalysts"][:6],
         "signals": signals or ["等待更多连续性验证"],
-        "risks": risks,
-        "validation_points": [
-            "观察强势股/涨停数量是否继续增加",
-            "跟踪公告、调研或研报中是否出现订单/扩产/价格证据",
-            "若核心票放量滞涨且炸板率升高，视为短线降温信号",
-        ],
-        "fail_conditions": [
-            "连续两日跌出强势词频和涨停行业前列",
-            "催化无法落到收入、产能或订单",
-        ],
     }
 
 
@@ -1978,7 +1962,6 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
                         "name": name,
                         "score": round(current_score, 1),
                         "previous_score": round(old_score, 1),
-                        "risks": ["热度较前一交易日明显回落", "需观察核心票是否继续缩量或炸板"],
                     }
                 )
     cooling_sectors = sorted(cooling_sectors, key=lambda item: item["previous_score"] - item["score"], reverse=True)[:8]
@@ -2006,7 +1989,7 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
     return {
         "type": "sector_radar",
         "title": "板块异动雷达",
-        "summary": "资金连续性、题材扩散、涨停结构、量价强度、催化密度和风险扣分综合评分。",
+        "summary": "资金连续性、题材扩散、涨停结构、价格强度、成交放大、催化密度和风险扣分综合评分。",
         "top_sectors": top_sectors,
         "watch_sectors": watch_sectors,
         "cooling_sectors": cooling_sectors,
@@ -2375,16 +2358,10 @@ def render_sector_radar_text(section: dict[str, Any]) -> str:
             if stock.get("name")
         )
         signals = "、".join(item.get("signals", [])[:3])
-        risks = "、".join(item.get("risks", [])[:2])
-        catalysts = "；".join(
-            f"{catalyst.get('source') or ''}{('/' + catalyst.get('evidence_level')) if catalyst.get('evidence_level') else ''}：{catalyst.get('title') or ''}"
-            for catalyst in item.get("catalysts", [])[:2]
-        )
         lines.append(
             f"- {item.get('name')}：综合{item.get('score')}，连续{item.get('flow_days')}日，"
             f"涨停{item.get('limit_up_count')}只，强势{item.get('hot_stock_count')}只，催化{item.get('catalyst_count')}条，"
-            f"证据{item.get('evidence_level')}。核心票：{core or '暂无'}。信号：{signals or '暂无'}。风险：{risks or '暂无'}。"
-            f"短期催化：{catalysts or '暂无'}。"
+            f"证据{item.get('evidence_level')}。核心票：{core or '暂无'}。信号：{signals or '暂无'}。"
         )
     watch = section.get("watch_sectors", [])[:4]
     if watch:
