@@ -89,7 +89,8 @@
   }
 
   function renderSectorRadar(section) {
-    const metricCards = (section.top_sectors || []).slice(0, 4).map(item => `
+    const topThree = (section.top_sectors || []).slice(0, 3);
+    const metricCards = topThree.map(item => `
       <div class="metric sector-metric">
         <strong>${fmt(item.score)}</strong>
         <span>${escapeHtml(item.name)} · 连续${fmt(item.flow_days)}日</span>
@@ -98,6 +99,23 @@
     const renderStockChips = stocks => (stocks || []).slice(0, 8).map(stock => `
       <span class="chip">${escapeHtml(stock.name || '')}${stock.code ? `(${escapeHtml(stock.code)})` : ''} ${pct(stock.change_pct)}</span>
     `).join('');
+    const renderCatalysts = item => (item.catalysts || []).slice(0, 3).map(catalyst => {
+      const link = catalyst.link || catalyst.url || catalyst.pdf_url;
+      const meta = [catalyst.time, catalyst.source, catalyst.evidence_level].filter(Boolean).join(' / ');
+      return `
+        <div class="sector-catalyst">
+          ${meta ? `<div class="item-meta">${escapeHtml(meta)}</div>` : ''}
+          <div class="item-text">${escapeHtml(catalyst.title || '')}${link ? ` <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">链接</a>` : ''}</div>
+        </div>
+      `;
+    }).join('');
+    const renderBreakdown = item => {
+      const breakdown = item.score_breakdown || {};
+      return ['资金连续性', '题材扩散', '涨停结构', '量价强度', '催化密度', '风险扣分']
+        .filter(key => breakdown[key] !== undefined && breakdown[key] !== null)
+        .map(key => `<span>${escapeHtml(key)} ${fmt(breakdown[key])}</span>`)
+        .join('');
+    };
     const renderSectorCard = (item, compact = false) => `
       <div class="sector-card ${compact ? 'compact' : ''}">
         <div class="sector-card-head">
@@ -117,6 +135,7 @@
           <span>催化 ${fmt(item.catalyst_count)}</span>
           <span>成交 ${fmt(item.amount_yi)}亿</span>
         </div>
+        <div class="sector-breakdown">${renderBreakdown(item)}</div>
         <div class="chip-row compact">${(item.signals || []).map(x => `<span class="chip">${escapeHtml(x)}</span>`).join('') || '<span class="small">暂无信号</span>'}</div>
         <div class="sector-block">
           <span>核心票</span>
@@ -126,6 +145,10 @@
           <div class="sector-block">
             <span>扩散票</span>
             <div class="chip-row compact">${renderStockChips(item.diffusion_stocks) || '<span class="small">暂无</span>'}</div>
+          </div>
+          <div class="sector-block">
+            <span>短期催化</span>
+            <div class="sector-catalyst-list">${renderCatalysts(item) || '<div class="small">暂无近48小时催化消息。</div>'}</div>
           </div>
           <div class="sector-two-col">
             <div>
@@ -140,7 +163,7 @@
         `}
       </div>
     `;
-    const topCards = (section.top_sectors || []).map(item => renderSectorCard(item)).join('');
+    const topCards = topThree.map(item => renderSectorCard(item)).join('');
     const watchCards = (section.watch_sectors || []).map(item => renderSectorCard(item, true)).join('');
     const cooling = (section.cooling_sectors || []).map(item => `
       <span class="chip cooling">${escapeHtml(item.name)} ${fmt(item.previous_score)}→${fmt(item.score)}</span>

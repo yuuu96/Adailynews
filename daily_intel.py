@@ -122,37 +122,30 @@ SECTOR_THEMES = {
     "机器人": {
         "keywords": ["机器人", "人形机器人", "工业机器人", "执行器", "丝杠", "减速器", "伺服", "灵巧手", "谐波"],
         "related_codes": ["002747", "300124", "688017", "603662", "603728", "603667", "002472", "002896", "688320", "688160", "300580", "603009", "002031", "688165", "300024", "300276"],
-        "bubble_tags": ["上游", "国产替代", "资本开支", "核心资产未上市"],
     },
     "AI算力/数据中心": {
         "keywords": ["AI", "算力", "数据中心", "液冷", "服务器", "英伟达", "NVIDIA", "GB200", "GB300", "Rubin", "CPO", "光模块"],
         "related_codes": ["300502", "300308", "300394", "300476", "002463", "688256", "688041", "002837", "301018", "300990", "300499"],
-        "bubble_tags": ["指数级景气", "资本开支", "供需缺口"],
     },
     "半导体设备材料": {
         "keywords": ["半导体", "半导体设备", "光刻胶", "电子特气", "CMP", "湿电子", "氢氟酸", "前驱体", "硅片", "刻蚀", "薄膜"],
         "related_codes": ["688300", "300054", "688126", "603650", "002409", "688146", "600703", "002549", "600360", "688072", "688082", "688012"],
-        "bubble_tags": ["卡脖子", "国产替代", "资本开支", "上游"],
     },
     "先进封装/HBM": {
         "keywords": ["HBM", "先进封装", "Chiplet", "CoWoS", "封测", "玻璃基板", "ABF", "载板", "测试"],
         "related_codes": ["600584", "002156", "002185", "688362", "002436", "002916", "600183", "688183", "603773", "300475", "002409"],
-        "bubble_tags": ["卡脖子", "资本开支", "供需缺口", "国产替代"],
     },
     "数据中心电力液冷": {
         "keywords": ["液冷", "温控", "变压器", "电力", "UPS", "HVDC", "储能", "电源", "配电"],
         "related_codes": ["002837", "301018", "300990", "300499", "688676", "002922", "002335", "002518", "300001", "600550", "601179"],
-        "bubble_tags": ["资本开支", "供需缺口", "上游"],
     },
     "锂电/储能材料": {
         "keywords": ["锂电", "储能", "碳酸锂", "锂矿", "电解液", "六氟磷酸锂", "固态电池", "钠电"],
         "related_codes": ["300750", "002466", "002460", "002738", "002756", "300274", "002812", "002407", "002709"],
-        "bubble_tags": ["供需缺口", "上游", "资本开支"],
     },
     "低空经济/军工": {
         "keywords": ["低空", "无人机", "eVTOL", "军工", "卫星", "商业航天", "航天", "雷达"],
         "related_codes": ["002085", "300424", "688297", "002389", "600118", "600879", "688568", "300101"],
-        "bubble_tags": ["战略赛道", "国产替代", "资本开支"],
     },
 }
 
@@ -1683,7 +1676,6 @@ def base_sector_state(name: str, kind: str = "theme") -> dict[str, Any]:
         "name": name,
         "kind": kind,
         "keywords": config.get("keywords", []),
-        "bubble_tags": config.get("bubble_tags", []),
         "limit_up_count": 0,
         "hot_stock_count": 0,
         "catalyst_count": 0,
@@ -1792,15 +1784,13 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
     avg_change = sector["change_sum"] / sector["change_count"] if sector["change_count"] else 0
     tag_count = sum(sector["tag_counter"].values())
     industry_span = len(sector["industry_counter"])
-    bubble_tags = sector.get("bubble_tags") or []
 
     flow_days = sector_flow_days(sector["name"], history, {**sector, "amount_yi": amount_yi})
-    flow_score = min(25, flow_days * 4 + min(amount_yi / 20, 8) + hot_stock_count * 0.8 + limit_up_count * 1.3)
+    flow_score = min(30, flow_days * 5 + min(amount_yi / 18, 10) + hot_stock_count * 0.9 + limit_up_count * 1.5)
     diffusion_score = min(20, stock_count * 1.5 + tag_count * 0.8 + industry_span * 2.0)
     limit_score = min(20, limit_up_count * 3 + one_word_count * 2 + safe_float(sector["max_board"]) * 1.5 - break_count * 0.8)
     price_score = min(15, max(avg_change, 0) * 1.2 + min(amount_yi / 30, 6))
     catalyst_score = min(15, catalyst_count * 3.5)
-    bubble_score = min(15, len(bubble_tags) * 3 + (4 if any(tag in bubble_tags for tag in ["卡脖子", "上游"]) else 0))
     risk_penalty = 0.0
     risks = []
     if stock_count <= 1 and (hot_stock_count + limit_up_count) > 0:
@@ -1815,7 +1805,7 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
     if not risks:
         risks.append("需继续验证收入占比、订单和产能兑现")
 
-    score = max(0, min(100, flow_score + diffusion_score + limit_score + price_score + catalyst_score + bubble_score - risk_penalty))
+    score = max(0, min(100, flow_score + diffusion_score + limit_score + price_score + catalyst_score - risk_penalty))
     signals = []
     if flow_days >= 2:
         signals.append(f"连续{flow_days}日增强")
@@ -1825,8 +1815,6 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
         signals.append("涨停行业集中")
     if catalyst_count >= 3:
         signals.append("催化密度提升")
-    if bubble_tags:
-        signals.append("泡沫属性：" + "、".join(bubble_tags[:4]))
     if rank_change and rank_change > 0:
         signals.append(f"排名上升{rank_change}位")
 
@@ -1847,6 +1835,14 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
         "one_word_count": one_word_count,
         "break_count": break_count,
         "avg_change_pct": round(avg_change, 2),
+        "score_breakdown": {
+            "资金连续性": round(flow_score, 1),
+            "题材扩散": round(diffusion_score, 1),
+            "涨停结构": round(limit_score, 1),
+            "量价强度": round(price_score, 1),
+            "催化密度": round(catalyst_score, 1),
+            "风险扣分": round(risk_penalty, 1),
+        },
         "topic_tags": [{"name": name, "count": count} for name, count in sector["tag_counter"].most_common(6)],
         "industries": [{"name": name, "count": count} for name, count in sector["industry_counter"].most_common(5)],
         "evidence_level": evidence_level,
@@ -2010,7 +2006,7 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
     return {
         "type": "sector_radar",
         "title": "板块异动雷达",
-        "summary": "连续资金、题材扩散、涨停结构、催化密度和泡沫属性综合评分。",
+        "summary": "资金连续性、题材扩散、涨停结构、量价强度、催化密度和风险扣分综合评分。",
         "top_sectors": top_sectors,
         "watch_sectors": watch_sectors,
         "cooling_sectors": cooling_sectors,
@@ -2372,7 +2368,7 @@ def render_sector_radar_text(section: dict[str, Any]) -> str:
     if not section:
         return ""
     lines = ["板块异动雷达："]
-    for item in section.get("top_sectors", [])[:5]:
+    for item in section.get("top_sectors", [])[:3]:
         core = "、".join(
             f"{stock.get('name')}({stock.get('code')})"
             for stock in item.get("core_stocks", [])[:4]
@@ -2380,10 +2376,15 @@ def render_sector_radar_text(section: dict[str, Any]) -> str:
         )
         signals = "、".join(item.get("signals", [])[:3])
         risks = "、".join(item.get("risks", [])[:2])
+        catalysts = "；".join(
+            f"{catalyst.get('source') or ''}{('/' + catalyst.get('evidence_level')) if catalyst.get('evidence_level') else ''}：{catalyst.get('title') or ''}"
+            for catalyst in item.get("catalysts", [])[:2]
+        )
         lines.append(
             f"- {item.get('name')}：综合{item.get('score')}，连续{item.get('flow_days')}日，"
             f"涨停{item.get('limit_up_count')}只，强势{item.get('hot_stock_count')}只，催化{item.get('catalyst_count')}条，"
             f"证据{item.get('evidence_level')}。核心票：{core or '暂无'}。信号：{signals or '暂无'}。风险：{risks or '暂无'}。"
+            f"短期催化：{catalysts or '暂无'}。"
         )
     watch = section.get("watch_sectors", [])[:4]
     if watch:
