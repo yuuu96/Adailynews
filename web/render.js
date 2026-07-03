@@ -88,6 +88,72 @@
     `;
   }
 
+  function renderSectorRadar(section) {
+    const metricCards = (section.top_sectors || []).slice(0, 4).map(item => `
+      <div class="metric sector-metric">
+        <strong>${fmt(item.score)}</strong>
+        <span>${escapeHtml(item.name)} · 连续${fmt(item.flow_days)}日</span>
+      </div>
+    `).join('');
+    const renderStockChips = stocks => (stocks || []).slice(0, 8).map(stock => `
+      <span class="chip">${escapeHtml(stock.name || '')}${stock.code ? `(${escapeHtml(stock.code)})` : ''} ${pct(stock.change_pct)}</span>
+    `).join('');
+    const renderSectorCard = (item, compact = false) => `
+      <div class="sector-card ${compact ? 'compact' : ''}">
+        <div class="sector-card-head">
+          <div>
+            <h3>${escapeHtml(item.name)}</h3>
+            <div class="item-meta">
+              证据 ${escapeHtml(item.evidence_level || 'NA')}
+              ${item.rank_change ? ` · 排名${Number(item.rank_change) > 0 ? '上升' : '下降'}${Math.abs(Number(item.rank_change))}位` : ''}
+            </div>
+          </div>
+          <div class="sector-score">${fmt(item.score)}</div>
+        </div>
+        <div class="sector-stats">
+          <span>连续 ${fmt(item.flow_days)}日</span>
+          <span>涨停 ${fmt(item.limit_up_count)}</span>
+          <span>强势 ${fmt(item.hot_stock_count)}</span>
+          <span>催化 ${fmt(item.catalyst_count)}</span>
+          <span>成交 ${fmt(item.amount_yi)}亿</span>
+        </div>
+        <div class="chip-row compact">${(item.signals || []).map(x => `<span class="chip">${escapeHtml(x)}</span>`).join('') || '<span class="small">暂无信号</span>'}</div>
+        <div class="sector-block">
+          <span>核心票</span>
+          <div class="chip-row compact">${renderStockChips(item.core_stocks) || '<span class="small">暂无</span>'}</div>
+        </div>
+        ${compact ? '' : `
+          <div class="sector-block">
+            <span>扩散票</span>
+            <div class="chip-row compact">${renderStockChips(item.diffusion_stocks) || '<span class="small">暂无</span>'}</div>
+          </div>
+          <div class="sector-two-col">
+            <div>
+              <div class="small">验证点</div>
+              <ul>${(item.validation_points || []).slice(0, 3).map(x => `<li>${escapeHtml(x)}</li>`).join('') || '<li>暂无</li>'}</ul>
+            </div>
+            <div>
+              <div class="small">风险</div>
+              <ul>${(item.risks || []).slice(0, 3).map(x => `<li>${escapeHtml(x)}</li>`).join('') || '<li>暂无</li>'}</ul>
+            </div>
+          </div>
+        `}
+      </div>
+    `;
+    const topCards = (section.top_sectors || []).map(item => renderSectorCard(item)).join('');
+    const watchCards = (section.watch_sectors || []).map(item => renderSectorCard(item, true)).join('');
+    const cooling = (section.cooling_sectors || []).map(item => `
+      <span class="chip cooling">${escapeHtml(item.name)} ${fmt(item.previous_score)}→${fmt(item.score)}</span>
+    `).join('');
+    return `
+      <div class="metric-grid">${metricCards || '<div class="small">暂无板块评分。</div>'}</div>
+      <h3>综合排名</h3>
+      <div class="sector-grid">${topCards || renderFallback(section)}</div>
+      ${watchCards ? `<h3>潜伏观察</h3><div class="sector-grid compact">${watchCards}</div>` : ''}
+      ${cooling ? `<h3>降温方向</h3><div class="chip-row">${cooling}</div>` : ''}
+    `;
+  }
+
   function renderMaterials(section) {
     const cards = (section.materials || []).map(item => {
       const price = item.price;
@@ -251,6 +317,7 @@
   function renderBody(section) {
     switch (section.type) {
       case 'fermentation': return renderFermentation(section);
+      case 'sector_radar': return renderSectorRadar(section);
       case 'material_radar': return renderMaterials(section);
       case 'material_news': return renderMaterialNews(section);
       case 'futures_summary': return renderFutures(section);

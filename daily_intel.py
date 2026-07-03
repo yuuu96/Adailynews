@@ -39,6 +39,8 @@ except Exception:  # pragma: no cover - handled at runtime
 
 ROOT = Path(__file__).resolve().parent
 REPORT_DIR = ROOT / "reports" / "daily"
+SECTOR_RADAR_DIR = ROOT / "reports" / "sector_radar"
+SECTOR_RADAR_HISTORY = SECTOR_RADAR_DIR / "history.jsonl"
 LATEST_JSON = REPORT_DIR / "latest.json"
 LATEST_MD = REPORT_DIR / "latest.md"
 
@@ -114,6 +116,44 @@ WATCHLIST = {
     "半导体材料": ["688300", "300054", "688126", "603650", "002409", "688146", "600703", "002549", "600360"],
     "储能锂矿": ["300750", "002466", "002460", "002738", "002756", "300274", "002812"],
     "电网电力": ["601179", "600550", "600973", "002498", "002560", "600236", "000899"],
+}
+
+SECTOR_THEMES = {
+    "机器人": {
+        "keywords": ["机器人", "人形机器人", "工业机器人", "执行器", "丝杠", "减速器", "伺服", "灵巧手", "谐波"],
+        "related_codes": ["002747", "300124", "688017", "603662", "603728", "603667", "002472", "002896", "688320", "688160", "300580", "603009", "002031", "688165", "300024", "300276"],
+        "bubble_tags": ["上游", "国产替代", "资本开支", "核心资产未上市"],
+    },
+    "AI算力/数据中心": {
+        "keywords": ["AI", "算力", "数据中心", "液冷", "服务器", "英伟达", "NVIDIA", "GB200", "GB300", "Rubin", "CPO", "光模块"],
+        "related_codes": ["300502", "300308", "300394", "300476", "002463", "688256", "688041", "002837", "301018", "300990", "300499"],
+        "bubble_tags": ["指数级景气", "资本开支", "供需缺口"],
+    },
+    "半导体设备材料": {
+        "keywords": ["半导体", "半导体设备", "光刻胶", "电子特气", "CMP", "湿电子", "氢氟酸", "前驱体", "硅片", "刻蚀", "薄膜"],
+        "related_codes": ["688300", "300054", "688126", "603650", "002409", "688146", "600703", "002549", "600360", "688072", "688082", "688012"],
+        "bubble_tags": ["卡脖子", "国产替代", "资本开支", "上游"],
+    },
+    "先进封装/HBM": {
+        "keywords": ["HBM", "先进封装", "Chiplet", "CoWoS", "封测", "玻璃基板", "ABF", "载板", "测试"],
+        "related_codes": ["600584", "002156", "002185", "688362", "002436", "002916", "600183", "688183", "603773", "300475", "002409"],
+        "bubble_tags": ["卡脖子", "资本开支", "供需缺口", "国产替代"],
+    },
+    "数据中心电力液冷": {
+        "keywords": ["液冷", "温控", "变压器", "电力", "UPS", "HVDC", "储能", "电源", "配电"],
+        "related_codes": ["002837", "301018", "300990", "300499", "688676", "002922", "002335", "002518", "300001", "600550", "601179"],
+        "bubble_tags": ["资本开支", "供需缺口", "上游"],
+    },
+    "锂电/储能材料": {
+        "keywords": ["锂电", "储能", "碳酸锂", "锂矿", "电解液", "六氟磷酸锂", "固态电池", "钠电"],
+        "related_codes": ["300750", "002466", "002460", "002738", "002756", "300274", "002812", "002407", "002709"],
+        "bubble_tags": ["供需缺口", "上游", "资本开支"],
+    },
+    "低空经济/军工": {
+        "keywords": ["低空", "无人机", "eVTOL", "军工", "卫星", "商业航天", "航天", "雷达"],
+        "related_codes": ["002085", "300424", "688297", "002389", "600118", "600879", "688568", "300101"],
+        "bubble_tags": ["战略赛道", "国产替代", "资本开支"],
+    },
 }
 
 FOCUS_TOPICS = {
@@ -349,6 +389,7 @@ def ensure_env() -> None:
     os.environ.setdefault("no_proxy", "*")
     os.environ.setdefault("NO_PROXY", "*")
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    SECTOR_RADAR_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _source_worker(fn: Callable[[], Any], queue: mp.Queue) -> None:
@@ -1607,6 +1648,377 @@ def signal_tightness(base: str, hits: list[dict[str, Any]], price: dict[str, Any
     return base
 
 
+def load_sector_history(limit: int = 8) -> list[dict[str, Any]]:
+    if not SECTOR_RADAR_HISTORY.exists():
+        return []
+    rows = []
+    for line in SECTOR_RADAR_HISTORY.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows[-limit:]
+
+
+def save_sector_history(snapshot: dict[str, Any]) -> None:
+    SECTOR_RADAR_DIR.mkdir(parents=True, exist_ok=True)
+    rows = load_sector_history(limit=240)
+    rows = [row for row in rows if row.get("date") != snapshot.get("date")]
+    rows.append(snapshot)
+    payload = "\n".join(json.dumps(row, ensure_ascii=False) for row in rows[-240:])
+    SECTOR_RADAR_HISTORY.write_text(payload + "\n", encoding="utf-8")
+
+
+def sector_text_hit(text: str, keywords: list[str]) -> bool:
+    text_upper = str(text or "").upper()
+    return any(keyword.upper() in text_upper for keyword in keywords)
+
+
+def base_sector_state(name: str, kind: str = "theme") -> dict[str, Any]:
+    config = SECTOR_THEMES.get(name, {})
+    return {
+        "name": name,
+        "kind": kind,
+        "keywords": config.get("keywords", []),
+        "bubble_tags": config.get("bubble_tags", []),
+        "limit_up_count": 0,
+        "hot_stock_count": 0,
+        "catalyst_count": 0,
+        "amount_yi": 0.0,
+        "one_word_count": 0,
+        "break_count": 0,
+        "max_board": 0,
+        "change_sum": 0.0,
+        "change_count": 0,
+        "tag_counter": Counter(),
+        "industry_counter": Counter(),
+        "stocks": {},
+        "catalysts": [],
+        "signals": [],
+        "risks": [],
+    }
+
+
+def ensure_sector(sectors: dict[str, dict[str, Any]], name: str, kind: str = "theme") -> dict[str, Any]:
+    if name not in sectors:
+        sectors[name] = base_sector_state(name, kind=kind)
+    return sectors[name]
+
+
+def add_sector_stock(sector: dict[str, Any], stock: dict[str, Any], role: str) -> None:
+    code = str(stock.get("code") or "")
+    name = str(stock.get("name") or "")
+    if not code and not name:
+        return
+    key = code or name
+    current = sector["stocks"].get(key, {})
+    current.update(
+        {
+            "code": code,
+            "name": name,
+            "role": "核心" if role == "core" or current.get("role") == "核心" else "扩散",
+            "change_pct": safe_float(stock.get("change_pct"), current.get("change_pct", 0)),
+            "amount_yi": safe_float(stock.get("amount_yi"), current.get("amount_yi", 0)),
+            "reason": stock.get("reason") or current.get("reason"),
+            "industry": stock.get("industry") or current.get("industry"),
+        }
+    )
+    sector["stocks"][key] = current
+
+
+def sector_names_for_text(text: str) -> list[str]:
+    return [name for name, config in SECTOR_THEMES.items() if sector_text_hit(text, config.get("keywords", []))]
+
+
+def sector_names_for_code(code: Any) -> list[str]:
+    code_text = str(code or "")
+    return [name for name, config in SECTOR_THEMES.items() if code_text in config.get("related_codes", [])]
+
+
+def add_sector_catalyst(sectors: dict[str, dict[str, Any]], source: str, item: dict[str, Any], evidence: str) -> None:
+    text = text_from_record(item)
+    for name in sector_names_for_text(text):
+        sector = ensure_sector(sectors, name)
+        sector["catalyst_count"] += 1
+        if len(sector["catalysts"]) < 6:
+            sector["catalysts"].append(
+                {
+                    "source": source,
+                    "evidence_level": evidence,
+                    "title": item.get("title") or item.get("text") or item.get("summary") or text[:80],
+                    "time": item.get("time") or item.get("date") or item.get("publish_time"),
+                    "link": item.get("link") or item.get("url") or item.get("pdf_url"),
+                }
+            )
+
+
+def previous_sector_ranks(history: list[dict[str, Any]]) -> dict[str, int]:
+    if not history:
+        return {}
+    sectors = history[-1].get("sectors", {})
+    ranked = sorted(sectors.items(), key=lambda kv: safe_float(kv[1].get("score")), reverse=True)
+    return {name: idx + 1 for idx, (name, _data) in enumerate(ranked)}
+
+
+def sector_flow_days(name: str, history: list[dict[str, Any]], today: dict[str, Any]) -> int:
+    def active(data: dict[str, Any]) -> bool:
+        return (
+            safe_float(data.get("score")) >= 35
+            or safe_float(data.get("limit_up_count")) > 0
+            or safe_float(data.get("hot_stock_count")) > 0
+            or safe_float(data.get("amount_yi")) > 0
+        )
+
+    days = 1 if active(today) else 0
+    for row in reversed(history):
+        data = (row.get("sectors") or {}).get(name)
+        if not data or not active(data):
+            break
+        days += 1
+    return days
+
+
+def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], rank_change: int | None) -> dict[str, Any]:
+    stock_count = len(sector["stocks"])
+    limit_up_count = int(sector["limit_up_count"])
+    hot_stock_count = int(sector["hot_stock_count"])
+    catalyst_count = int(sector["catalyst_count"])
+    amount_yi = round(safe_float(sector["amount_yi"]), 2)
+    one_word_count = int(sector["one_word_count"])
+    break_count = int(sector["break_count"])
+    avg_change = sector["change_sum"] / sector["change_count"] if sector["change_count"] else 0
+    tag_count = sum(sector["tag_counter"].values())
+    industry_span = len(sector["industry_counter"])
+    bubble_tags = sector.get("bubble_tags") or []
+
+    flow_days = sector_flow_days(sector["name"], history, {**sector, "amount_yi": amount_yi})
+    flow_score = min(25, flow_days * 4 + min(amount_yi / 20, 8) + hot_stock_count * 0.8 + limit_up_count * 1.3)
+    diffusion_score = min(20, stock_count * 1.5 + tag_count * 0.8 + industry_span * 2.0)
+    limit_score = min(20, limit_up_count * 3 + one_word_count * 2 + safe_float(sector["max_board"]) * 1.5 - break_count * 0.8)
+    price_score = min(15, max(avg_change, 0) * 1.2 + min(amount_yi / 30, 6))
+    catalyst_score = min(15, catalyst_count * 3.5)
+    bubble_score = min(15, len(bubble_tags) * 3 + (4 if any(tag in bubble_tags for tag in ["卡脖子", "上游"]) else 0))
+    risk_penalty = 0.0
+    risks = []
+    if stock_count <= 1 and (hot_stock_count + limit_up_count) > 0:
+        risk_penalty += 4
+        risks.append("单票脉冲，板块扩散不足")
+    if avg_change >= 8 and catalyst_count == 0:
+        risk_penalty += 5
+        risks.append("短线涨幅较高但催化证据不足")
+    if limit_up_count and break_count / max(limit_up_count, 1) >= 0.6:
+        risk_penalty += 5
+        risks.append("炸板率偏高，接力风险上升")
+    if not risks:
+        risks.append("需继续验证收入占比、订单和产能兑现")
+
+    score = max(0, min(100, flow_score + diffusion_score + limit_score + price_score + catalyst_score + bubble_score - risk_penalty))
+    signals = []
+    if flow_days >= 2:
+        signals.append(f"连续{flow_days}日增强")
+    if hot_stock_count >= 5:
+        signals.append("强势股集中")
+    if limit_up_count >= 3:
+        signals.append("涨停行业集中")
+    if catalyst_count >= 3:
+        signals.append("催化密度提升")
+    if bubble_tags:
+        signals.append("泡沫属性：" + "、".join(bubble_tags[:4]))
+    if rank_change and rank_change > 0:
+        signals.append(f"排名上升{rank_change}位")
+
+    stocks = sorted(sector["stocks"].values(), key=lambda item: (item.get("role") == "核心", safe_float(item.get("amount_yi")), safe_float(item.get("change_pct"))), reverse=True)
+    core_stocks = [item for item in stocks if item.get("role") == "核心"][:8]
+    diffusion_stocks = [item for item in stocks if item.get("role") != "核心"][:10]
+    evidence_level = "公告/调研" if any(c.get("evidence_level") == "公告/调研" for c in sector["catalysts"]) else ("研报/新闻" if catalyst_count else "题材联想")
+
+    return {
+        "name": sector["name"],
+        "score": round(score, 1),
+        "rank_change": rank_change,
+        "flow_days": flow_days,
+        "limit_up_count": limit_up_count,
+        "hot_stock_count": hot_stock_count,
+        "catalyst_count": catalyst_count,
+        "amount_yi": amount_yi,
+        "one_word_count": one_word_count,
+        "break_count": break_count,
+        "avg_change_pct": round(avg_change, 2),
+        "topic_tags": [{"name": name, "count": count} for name, count in sector["tag_counter"].most_common(6)],
+        "industries": [{"name": name, "count": count} for name, count in sector["industry_counter"].most_common(5)],
+        "evidence_level": evidence_level,
+        "core_stocks": core_stocks,
+        "diffusion_stocks": diffusion_stocks,
+        "catalysts": sector["catalysts"][:6],
+        "signals": signals or ["等待更多连续性验证"],
+        "risks": risks,
+        "validation_points": [
+            "观察强势股/涨停数量是否继续增加",
+            "跟踪公告、调研或研报中是否出现订单/扩产/价格证据",
+            "若核心票放量滞涨且炸板率升高，视为短线降温信号",
+        ],
+        "fail_conditions": [
+            "连续两日跌出强势词频和涨停行业前列",
+            "催化无法落到收入、产能或订单",
+        ],
+    }
+
+
+def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = True) -> dict[str, Any]:
+    current_date = today_cn().isoformat()
+    history = [row for row in load_sector_history() if row.get("date") != current_date]
+    previous_ranks = previous_sector_ranks(history)
+    sectors = {name: base_sector_state(name) for name in SECTOR_THEMES}
+
+    ths = sources.get("同花顺热点")
+    if ths and ths.ok:
+        high_frequency_tags = {tag for tag, count in ths.data.get("tag_top", [])[:15] if safe_float(count) >= 2}
+        for tag, count in ths.data.get("tag_top", [])[:20]:
+            matched = sector_names_for_text(tag)
+            if not matched and count >= 2:
+                matched = [tag]
+            for name in matched:
+                sector = ensure_sector(sectors, name, kind="tag")
+                sector["tag_counter"][tag] += int(count)
+        for item in ths.data.get("top", []):
+            text = f"{item.get('name')} {item.get('reason')}"
+            matched = sector_names_for_text(text)
+            matched.extend(sector_names_for_code(item.get("code")))
+            for tag in [x.strip() for x in str(item.get("reason") or "").split("+") if x.strip()]:
+                if not matched and ths.data.get("tag_top"):
+                    matched.extend(sector_names_for_text(tag))
+            if not matched:
+                matched = [tag.strip() for tag in str(item.get("reason") or "").split("+") if tag.strip() in high_frequency_tags][:2]
+            for name in set(matched):
+                sector = ensure_sector(sectors, name)
+                sector["hot_stock_count"] += 1
+                sector["change_sum"] += safe_float(item.get("change_pct"))
+                sector["change_count"] += 1
+                for tag in [x.strip() for x in str(item.get("reason") or "").split("+") if x.strip()]:
+                    sector["tag_counter"][tag] += 1
+                add_sector_stock(sector, item, "diffusion")
+
+    limit_up = sources.get("涨停池")
+    if limit_up and limit_up.ok:
+        for industry, count in limit_up.data.get("industry_top", [])[:12]:
+            sector = ensure_sector(sectors, industry, kind="industry")
+            sector["industry_counter"][industry] += int(count)
+        for item in limit_up.data.get("top", []):
+            industry = item.get("industry") or "未分类"
+            matched = set(sector_names_for_text(f"{item.get('name')} {industry}"))
+            matched.update(sector_names_for_code(item.get("code")))
+            matched.add(industry)
+            for name in matched:
+                sector = ensure_sector(sectors, name, kind="industry" if name == industry else "theme")
+                sector["limit_up_count"] += 1
+                sector["amount_yi"] += safe_float(item.get("amount_yi"))
+                sector["change_sum"] += safe_float(item.get("change_pct"))
+                sector["change_count"] += 1
+                sector["industry_counter"][industry] += 1
+                sector["break_count"] += int(safe_float(item.get("break_count"), 0))
+                sector["one_word_count"] += 1 if item.get("is_one_word_board") else 0
+                sector["max_board"] = max(safe_float(sector["max_board"]), safe_float(item.get("board_count"), 0))
+                add_sector_stock(sector, item, "core")
+
+    quotes = sources.get("产业链行情")
+    if quotes and quotes.ok:
+        for theme, stocks in quotes.data.items():
+            sector_name = "AI算力/数据中心" if "算力" in theme or "英伟达" in theme else theme
+            sector = ensure_sector(sectors, sector_name)
+            for item in stocks[:12]:
+                sector["amount_yi"] += safe_float(item.get("amount_yi"))
+                sector["change_sum"] += safe_float(item.get("change_pct"))
+                sector["change_count"] += 1
+                role = "core" if str(item.get("code")) in SECTOR_THEMES.get(sector_name, {}).get("related_codes", [])[:5] else "diffusion"
+                add_sector_stock(sector, item, role)
+
+    for source_name, evidence in [
+        ("重点公告", "公告/调研"),
+        ("机构研报", "研报/新闻"),
+        ("产业新闻", "研报/新闻"),
+        ("财联社快讯", "研报/新闻"),
+        ("金属快讯", "研报/新闻"),
+    ]:
+        source = sources.get(source_name)
+        if not source or not source.ok:
+            continue
+        for item in source.data.get("items", [])[:80]:
+            add_sector_catalyst(sectors, source_name, item, evidence)
+
+    ranked = []
+    today_rank_seed = sorted(sectors.values(), key=lambda item: (
+        item["hot_stock_count"] + item["limit_up_count"] + item["catalyst_count"],
+        item["amount_yi"],
+    ), reverse=True)
+    for idx, sector in enumerate(today_rank_seed, start=1):
+        if not (sector["hot_stock_count"] or sector["limit_up_count"] or sector["catalyst_count"] or sector["amount_yi"]):
+            continue
+        previous_rank = previous_ranks.get(sector["name"])
+        rank_change = previous_rank - idx if previous_rank else None
+        ranked.append(score_sector_state(sector, history, rank_change))
+    ranked.sort(key=lambda item: item.get("score", 0), reverse=True)
+    for idx, item in enumerate(ranked, start=1):
+        previous_rank = previous_ranks.get(item["name"])
+        item["rank_change"] = previous_rank - idx if previous_rank else item.get("rank_change")
+
+    top_sectors = ranked[:10]
+    watch_sectors = [
+        item for item in ranked[10:25]
+        if item.get("flow_days", 0) >= 2 or (35 <= safe_float(item.get("score")) < 70 and item.get("catalyst_count", 0) > 0)
+    ][:8]
+
+    today_by_name = {item["name"]: item for item in ranked}
+    cooling_sectors = []
+    if history:
+        for name, previous in (history[-1].get("sectors") or {}).items():
+            old_score = safe_float(previous.get("score"))
+            current_score = safe_float(today_by_name.get(name, {}).get("score"), 0)
+            if old_score >= 50 and old_score - current_score >= 15:
+                cooling_sectors.append(
+                    {
+                        "name": name,
+                        "score": round(current_score, 1),
+                        "previous_score": round(old_score, 1),
+                        "risks": ["热度较前一交易日明显回落", "需观察核心票是否继续缩量或炸板"],
+                    }
+                )
+    cooling_sectors = sorted(cooling_sectors, key=lambda item: item["previous_score"] - item["score"], reverse=True)[:8]
+
+    if persist:
+        snapshot = {
+            "date": current_date,
+            "sectors": {
+                item["name"]: {
+                    "score": item["score"],
+                    "limit_up_count": item["limit_up_count"],
+                    "hot_stock_count": item["hot_stock_count"],
+                    "amount_yi": item["amount_yi"],
+                    "catalyst_count": item["catalyst_count"],
+                }
+                for item in ranked[:40]
+            },
+        }
+        save_sector_history(snapshot)
+
+    items = [
+        f"{item['name']}：综合{item['score']}，连续{item['flow_days']}日增强，涨停{item['limit_up_count']}只，强势{item['hot_stock_count']}只，催化{item['catalyst_count']}条。"
+        for item in top_sectors[:6]
+    ] or ["暂无足够数据生成板块异动雷达。"]
+    return {
+        "type": "sector_radar",
+        "title": "板块异动雷达",
+        "summary": "连续资金、题材扩散、涨停结构、催化密度和泡沫属性综合评分。",
+        "top_sectors": top_sectors,
+        "watch_sectors": watch_sectors,
+        "cooling_sectors": cooling_sectors,
+        "sector_detail": top_sectors + watch_sectors,
+        "items": items,
+    }
+
+
 def build_fermentation_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     ths = sources.get("同花顺热点")
     limit_up = sources.get("涨停池")
@@ -1941,6 +2353,7 @@ def build_brief_sections(results: list[SourceResult], ai_summary: str | None, ai
     sources = source_map(results)
     return [
         build_fermentation_module(sources),
+        build_sector_radar_module(sources),
         build_material_radar_module(sources),
         build_material_news_module(sources),
         build_futures_module(sources),
@@ -1949,6 +2362,36 @@ def build_brief_sections(results: list[SourceResult], ai_summary: str | None, ai
         build_equity_map_module(sources),
         build_status_module(results),
     ]
+
+
+def find_section(sections: list[dict[str, Any]], section_type: str) -> dict[str, Any] | None:
+    return next((section for section in sections if section.get("type") == section_type), None)
+
+
+def render_sector_radar_text(section: dict[str, Any]) -> str:
+    if not section:
+        return ""
+    lines = ["板块异动雷达："]
+    for item in section.get("top_sectors", [])[:5]:
+        core = "、".join(
+            f"{stock.get('name')}({stock.get('code')})"
+            for stock in item.get("core_stocks", [])[:4]
+            if stock.get("name")
+        )
+        signals = "、".join(item.get("signals", [])[:3])
+        risks = "、".join(item.get("risks", [])[:2])
+        lines.append(
+            f"- {item.get('name')}：综合{item.get('score')}，连续{item.get('flow_days')}日，"
+            f"涨停{item.get('limit_up_count')}只，强势{item.get('hot_stock_count')}只，催化{item.get('catalyst_count')}条，"
+            f"证据{item.get('evidence_level')}。核心票：{core or '暂无'}。信号：{signals or '暂无'}。风险：{risks or '暂无'}。"
+        )
+    watch = section.get("watch_sectors", [])[:4]
+    if watch:
+        lines.append("潜伏观察：" + "；".join(f"{item.get('name')}({item.get('score')})" for item in watch))
+    cooling = section.get("cooling_sectors", [])[:4]
+    if cooling:
+        lines.append("降温方向：" + "；".join(f"{item.get('name')}({item.get('previous_score')}→{item.get('score')})" for item in cooling))
+    return "\n".join(lines)
 
 
 def deepseek_summary(
@@ -2009,6 +2452,10 @@ def render_markdown(report: dict[str, Any]) -> str:
         "## 原始聚合摘要",
         "",
         report["raw_digest"] or "暂无可用数据。",
+        "",
+        "## 板块异动雷达",
+        "",
+        render_sector_radar_text(find_section(report.get("brief_sections", []), "sector_radar")) or "暂无板块异动雷达。",
         "",
         "## 数据源状态",
         "",
@@ -2097,10 +2544,13 @@ def generate_report(
                 }
             )
     results = [SourceResult(r.name, r.ok, jsonable(r.data), r.error, r.elapsed_ms) for r in results]
+    brief_sections = build_brief_sections(results, None, None)
     raw_digest = build_raw_digest(results)
+    sector_digest = render_sector_radar_text(find_section(brief_sections, "sector_radar"))
+    ai_digest = f"{raw_digest}\n{sector_digest}" if raw_digest and sector_digest else (sector_digest or raw_digest)
     if progress_callback:
         progress_callback({"stage": "summarizing", "source": "DeepSeek摘要", "done": len(source_defs), "total": total_steps})
-    ai_summary, ai_error = deepseek_summary(results, raw_digest, api_key=api_key, model=model)
+    ai_summary, ai_error = deepseek_summary(results, ai_digest, api_key=api_key, model=model)
     if progress_callback:
         progress_callback(
             {
@@ -2122,7 +2572,7 @@ def generate_report(
         "source_status": [
             {"name": r.name, "ok": r.ok, "error": r.error, "elapsed_ms": r.elapsed_ms} for r in results
         ],
-        "brief_sections": build_brief_sections(results, ai_summary, ai_error),
+        "brief_sections": brief_sections,
         "sources": {r.name: {"ok": r.ok, "data": r.data, "error": r.error} for r in results},
     }
     if progress_callback:
