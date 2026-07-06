@@ -183,9 +183,13 @@ button:disabled { opacity: .62; }
   gap: 12px;
 }
 .module-card {
-  background: linear-gradient(180deg, #ffffff 0, #fbfdff 100%);
+  --module: var(--accent);
+  --module-soft: #eef5fb;
+  background:
+    linear-gradient(90deg, var(--module-soft) 0, rgba(255, 255, 255, 0) 46%),
+    linear-gradient(180deg, #ffffff 0, #fbfdff 100%);
   border: 1px solid var(--line);
-  border-top: 3px solid var(--accent);
+  border-top: 4px solid var(--module);
   border-radius: 10px;
   padding: 12px;
   box-shadow: 0 8px 22px rgba(31, 41, 55, .045);
@@ -193,14 +197,15 @@ button:disabled { opacity: .62; }
 .module-card:hover {
   border-color: #c7d7e8;
 }
-.module-card.sector_radar { border-top-color: #477a94; }
-.module-card.material_radar { border-top-color: #607d98; }
-.module-card.material_news { border-top-color: #9d6571; }
-.module-card.futures_summary { border-top-color: #5f7f9a; }
-.module-card.reports { border-top-color: #586a82; }
-.module-card.focus_groups { border-top-color: #6f7890; }
-.module-card.equity_map { border-top-color: #61758a; }
-.module-card.status { border-top-color: #9aa6b5; }
+.module-card.fermentation { --module: #9b5b5b; --module-soft: #fbefef; }
+.module-card.sector_radar { --module: #3f7895; --module-soft: #eaf4f8; }
+.module-card.material_radar { --module: #7c6a9d; --module-soft: #f1eef8; }
+.module-card.material_news { --module: #a36f45; --module-soft: #fbf1e8; }
+.module-card.futures_summary { --module: #4f7396; --module-soft: #eaf2fa; }
+.module-card.reports { --module: #64718b; --module-soft: #eef1f6; }
+.module-card.focus_groups { --module: #8a6685; --module-soft: #f6eef5; }
+.module-card.equity_map { --module: #5f7f7a; --module-soft: #edf5f3; }
+.module-card.status { --module: #8c98a8; --module-soft: #f0f3f7; }
 .module-index {
   display: inline-flex;
   align-items: center;
@@ -208,8 +213,8 @@ button:disabled { opacity: .62; }
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  background: #e7eef7;
-  color: var(--accent);
+  background: var(--module-soft);
+  color: var(--module);
   font-weight: 800;
   font-size: 13px;
   flex: 0 0 auto;
@@ -218,6 +223,9 @@ button:disabled { opacity: .62; }
   display: flex;
   gap: 8px;
   align-items: center;
+}
+.module-title h2 {
+  color: var(--module);
 }
 .metric-grid {
   display: grid;
