@@ -185,6 +185,8 @@ button:disabled { opacity: .62; }
 .module-card {
   --module: var(--accent);
   --module-soft: #eef5fb;
+  --module-surface: #fbfdff;
+  --module-line: #d7e2ec;
   background:
     linear-gradient(90deg, var(--module-soft) 0, rgba(255, 255, 255, 0) 46%),
     linear-gradient(180deg, #ffffff 0, #fbfdff 100%);
@@ -197,15 +199,15 @@ button:disabled { opacity: .62; }
 .module-card:hover {
   border-color: #c7d7e8;
 }
-.module-card.fermentation { --module: #9b5b5b; --module-soft: #fbefef; }
-.module-card.sector_radar { --module: #3f7895; --module-soft: #eaf4f8; }
-.module-card.material_radar { --module: #7c6a9d; --module-soft: #f1eef8; }
-.module-card.material_news { --module: #a36f45; --module-soft: #fbf1e8; }
-.module-card.futures_summary { --module: #4f7396; --module-soft: #eaf2fa; }
-.module-card.reports { --module: #64718b; --module-soft: #eef1f6; }
-.module-card.focus_groups { --module: #8a6685; --module-soft: #f6eef5; }
-.module-card.equity_map { --module: #5f7f7a; --module-soft: #edf5f3; }
-.module-card.status { --module: #8c98a8; --module-soft: #f0f3f7; }
+.module-card.fermentation { --module: #9b5b5b; --module-soft: #fbefef; --module-surface: #fffafa; --module-line: #ead0d0; }
+.module-card.sector_radar { --module: #3f7895; --module-soft: #eaf4f8; --module-surface: #f8fcfe; --module-line: #cfe1ea; }
+.module-card.material_radar { --module: #7c6a9d; --module-soft: #f1eef8; --module-surface: #fcfaff; --module-line: #ddd4ee; }
+.module-card.material_news { --module: #a36f45; --module-soft: #fbf1e8; --module-surface: #fffaf6; --module-line: #ecd8c6; }
+.module-card.futures_summary { --module: #4f7396; --module-soft: #eaf2fa; --module-surface: #f8fbff; --module-line: #d1dfed; }
+.module-card.reports { --module: #64718b; --module-soft: #eef1f6; --module-surface: #fbfcff; --module-line: #d9dee8; }
+.module-card.focus_groups { --module: #8a6685; --module-soft: #f6eef5; --module-surface: #fffbff; --module-line: #e6d4e3; }
+.module-card.equity_map { --module: #5f7f7a; --module-soft: #edf5f3; --module-surface: #f8fcfb; --module-line: #d2e4e0; }
+.module-card.status { --module: #8c98a8; --module-soft: #f0f3f7; --module-surface: #fbfcfe; --module-line: #dce2ea; }
 .module-index {
   display: inline-flex;
   align-items: center;
@@ -234,8 +236,8 @@ button:disabled { opacity: .62; }
   margin: 10px 0;
 }
 .metric {
-  background: var(--soft);
-  border: 1px solid var(--line);
+  background: var(--module-surface);
+  border: 1px solid var(--module-line);
   border-radius: 8px;
   padding: 8px;
 }
@@ -249,7 +251,7 @@ button:disabled { opacity: .62; }
   font-size: 12px;
 }
 .sector-metric strong {
-  color: var(--accent);
+  color: var(--module);
 }
 .chip-row {
   display: flex;
@@ -268,10 +270,14 @@ button:disabled { opacity: .62; }
   white-space: nowrap;
   color: #344054;
 }
+.module-card .chip {
+  border-color: var(--module-line);
+  background: var(--module-soft);
+}
 .chip-more {
-  color: var(--accent);
-  background: #eef5fb;
-  border-color: #c7d7e8;
+  color: var(--module);
+  background: var(--module-soft);
+  border-color: var(--module-line);
   font-weight: 700;
 }
 button.chip-more {
@@ -280,12 +286,12 @@ button.chip-more {
 }
 button.chip-more[aria-expanded="true"] {
   color: #ffffff;
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--module);
+  border-color: var(--module);
 }
 .table-wrap {
   overflow-x: auto;
-  border: 1px solid var(--line);
+  border: 1px solid var(--module-line);
   border-radius: 8px;
 }
 .data-table {
@@ -302,8 +308,8 @@ button.chip-more[aria-expanded="true"] {
   white-space: nowrap;
 }
 .data-table th {
-  color: #344054;
-  background: #f1f5f9;
+  color: var(--module);
+  background: var(--module-soft);
   font-weight: 700;
 }
 .data-table tr:last-child td { border-bottom: 0; }
@@ -320,13 +326,13 @@ button.chip-more[aria-expanded="true"] {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 .sector-card {
-  border: 1px solid var(--line);
+  border: 1px solid var(--module-line);
   border-radius: 8px;
   padding: 10px;
-  background: #fbfdff;
+  background: var(--module-surface);
 }
 .sector-card.compact {
-  background: #ffffff;
+  background: var(--module-surface);
 }
 .sector-card-head {
   display: flex;
@@ -341,8 +347,8 @@ button.chip-more[aria-expanded="true"] {
   min-width: 48px;
   border-radius: 8px;
   padding: 5px 7px;
-  background: #e8f1f8;
-  color: var(--accent);
+  background: var(--module-soft);
+  color: var(--module);
   text-align: center;
   font-size: 20px;
   font-weight: 800;
@@ -354,10 +360,10 @@ button.chip-more[aria-expanded="true"] {
   margin: 8px 0;
 }
 .sector-stats span {
-  border: 1px solid #d7e2ec;
+  border: 1px solid var(--module-line);
   border-radius: 6px;
   padding: 3px 6px;
-  background: #f8fafc;
+  background: #ffffff;
   font-size: 12px;
   color: #475467;
 }
@@ -389,16 +395,16 @@ button.chip-more[aria-expanded="true"] {
   align-items: stretch;
 }
 .material-card {
-  border: 1px solid var(--line);
+  border: 1px solid var(--module-line);
   border-radius: 8px;
   padding: 9px;
-  background: #ffffff;
+  background: var(--module-surface);
   align-self: stretch;
 }
 .material-card.featured {
   grid-column: 1 / -1;
-  border-color: #cbd9e8;
-  background: linear-gradient(180deg, #f8fbff 0, #ffffff 100%);
+  border-color: var(--module-line);
+  background: linear-gradient(180deg, var(--module-soft) 0, #ffffff 100%);
   padding: 10px;
 }
 .material-card.compact h3 {
@@ -433,8 +439,8 @@ button.chip-more[aria-expanded="true"] {
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 12px;
-  background: #eef2f7;
-  color: #475467;
+  background: var(--module-soft);
+  color: var(--module);
   white-space: nowrap;
 }
 .pill.hot {
@@ -517,11 +523,11 @@ button.chip-more[aria-expanded="true"] {
   word-break: break-word;
 }
 .fact {
-  background: var(--soft);
+  background: var(--module-surface);
   border-radius: 8px;
   padding: 7px 8px;
   min-width: 0;
-  border: 1px solid #e5edf5;
+  border: 1px solid var(--module-line);
 }
 .fact span {
   display: block;
@@ -536,10 +542,10 @@ button.chip-more[aria-expanded="true"] {
   gap: 8px;
 }
 .news-item, .report-item, .group-card, .stock-group {
-  border: 1px solid var(--line);
+  border: 1px solid var(--module-line);
   border-radius: 8px;
   padding: 9px 10px;
-  background: #ffffff;
+  background: var(--module-surface);
 }
 .item-meta {
   color: var(--muted);
@@ -561,8 +567,8 @@ button.chip-more[aria-expanded="true"] {
   margin-top: 7px;
 }
 .stock {
-  background: #ffffff;
-  border: 1px solid var(--line);
+  background: var(--module-surface);
+  border: 1px solid var(--module-line);
   border-radius: 8px;
   padding: 7px;
   font-size: 13px;
