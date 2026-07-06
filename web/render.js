@@ -23,6 +23,9 @@
   }
 
   function pct(value) {
+    if (value === null || value === undefined || value === '') {
+      return '<span class="neutral">NA</span>';
+    }
     const n = Number(value || 0);
     const cls = n > 0 ? 'pos' : (n < 0 ? 'neg' : 'neutral');
     const sign = n > 0 ? '+' : '';

@@ -116,6 +116,7 @@ WATCHLIST = {
     "半导体材料": ["688300", "300054", "688126", "603650", "002409", "688146", "600703", "002549", "600360"],
     "储能锂矿": ["300750", "002466", "002460", "002738", "002756", "300274", "002812"],
     "电网电力": ["601179", "600550", "600973", "002498", "002560", "600236", "000899"],
+    "数据中心电力液冷": ["002837", "301018", "300990", "300499", "688676", "002922", "002335", "002518", "300001", "600550", "601179"],
 }
 
 SECTOR_THEMES = {
@@ -655,7 +656,7 @@ def collect_watchlist_quotes() -> dict[str, list[dict[str, Any]]]:
     all_codes: list[str] = []
     for codes in WATCHLIST.values():
         all_codes.extend(codes)
-    quotes = apply_daily_close_overrides(tencent_quote(sorted(set(all_codes))), max_seconds=10)
+    quotes = apply_daily_close_overrides(tencent_quote(sorted(set(all_codes))), max_seconds=20)
     grouped = {}
     for theme, codes in WATCHLIST.items():
         grouped[theme] = [quotes[code] for code in codes if code in quotes]
@@ -1715,9 +1716,49 @@ def add_sector_stock(sector: dict[str, Any], stock: dict[str, Any], role: str) -
             "amount_yi": safe_float(stock.get("amount_yi"), current.get("amount_yi", 0)),
             "reason": stock.get("reason") or current.get("reason"),
             "industry": stock.get("industry") or current.get("industry"),
+            "quote_date": stock.get("quote_date") or current.get("quote_date"),
+            "quote_source": stock.get("quote_source") or current.get("quote_source"),
         }
     )
     sector["stocks"][key] = current
+
+
+def refresh_sector_stock_quotes(sectors: dict[str, dict[str, Any]], max_seconds: int = 20) -> None:
+    codes = sorted(
+        {
+            str(stock.get("code") or "")
+            for sector in sectors.values()
+            for stock in sector.get("stocks", {}).values()
+            if str(stock.get("code") or "").isdigit()
+        }
+    )
+    if not codes:
+        return
+    try:
+        quote_map = apply_daily_close_overrides(tencent_quote(codes), max_seconds=max_seconds)
+    except Exception:
+        return
+    for sector in sectors.values():
+        quoted_changes = []
+        for key, stock in list(sector.get("stocks", {}).items()):
+            code = str(stock.get("code") or "")
+            quote = quote_map.get(code)
+            if not quote:
+                continue
+            stock.update(
+                {
+                    "name": quote.get("name") or stock.get("name"),
+                    "change_pct": safe_float(quote.get("change_pct")),
+                    "amount_yi": safe_float(quote.get("amount_yi"), stock.get("amount_yi", 0)),
+                    "quote_date": quote.get("quote_date"),
+                    "quote_source": quote.get("quote_source"),
+                }
+            )
+            sector["stocks"][key] = stock
+            quoted_changes.append(safe_float(stock.get("change_pct")))
+        if quoted_changes:
+            sector["change_sum"] = sum(quoted_changes)
+            sector["change_count"] = len(quoted_changes)
 
 
 def sector_names_for_text(text: str) -> list[str]:
@@ -1927,6 +1968,8 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
             continue
         for item in source.data.get("items", [])[:80]:
             add_sector_catalyst(sectors, source_name, item, evidence)
+
+    refresh_sector_stock_quotes(sectors, max_seconds=20)
 
     ranked = []
     today_rank_seed = sorted(sectors.values(), key=lambda item: (
