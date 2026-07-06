@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#101820">
+  <meta name="theme-color" content="#edf2f7">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/styles.css">
   <title>A股情报雷达</title>
@@ -11,7 +11,7 @@
 <body>
   <header>
     <div class="bar">
-      <div>
+      <div class="brand-block">
         <h1>A股情报雷达</h1>
         <div class="meta">
           <span id="dateText">暂无报告</span>
@@ -20,6 +20,7 @@
       </div>
       <div class="actions">
         <button id="runBtn" type="button">一键生成</button>
+        <button id="refreshBtn" class="secondary" type="button">刷新最新</button>
         <span class="small" id="countText"></span>
       </div>
       <div class="toast" id="toast"></div>
@@ -66,6 +67,7 @@
   <script src="/render.js"></script>
   <script>
     const runBtn = document.getElementById('runBtn');
+    const refreshBtn = document.getElementById('refreshBtn');
     const toast = document.getElementById('toast');
     const apiKey = document.getElementById('apiKey');
     const saveKey = document.getElementById('saveKey');
@@ -113,10 +115,14 @@
 
     async function loadLatest() {
       try {
+        refreshBtn.disabled = true;
         const res = await fetch('/api/latest', { cache: 'no-store' });
         render(await res.json());
+        setToast('已读取最新报告。');
       } catch (err) {
         setToast(`读取失败：${err.message}`);
+      } finally {
+        refreshBtn.disabled = false;
       }
     }
 
@@ -174,6 +180,7 @@
       saveKey.checked = true;
     }
     runBtn.addEventListener('click', runReport);
+    refreshBtn.addEventListener('click', loadLatest);
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }

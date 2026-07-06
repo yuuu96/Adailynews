@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#101820">
+  <meta name="theme-color" content="#edf2f7">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./styles.css">
   <title>A股情报雷达</title>
@@ -11,9 +11,13 @@
 <body>
   <header>
     <div class="bar">
-      <div>
+      <div class="brand-block">
         <h1>A股情报雷达</h1>
         <div class="meta" id="meta">读取中...</div>
+      </div>
+      <div class="actions">
+        <button id="refreshBtn" type="button">刷新报告</button>
+        <span class="small" id="refreshStatus"></span>
       </div>
     </div>
   </header>
@@ -64,6 +68,8 @@
     const apiKey = document.getElementById('apiKey');
     const apiStatus = document.getElementById('apiStatus');
     const resummarizeBtn = document.getElementById('resummarizeBtn');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const refreshStatus = document.getElementById('refreshStatus');
 
     function render(data) {
       report = data;
@@ -74,10 +80,15 @@
       jsonDump.textContent = JSON.stringify(data.sources || data, null, 2);
     }
 
-    async function loadReport() {
-      const res = await fetch('./latest.json', { cache: 'no-store' });
+    async function loadReport(showStatus = false) {
+      if (showStatus) {
+        refreshBtn.disabled = true;
+        refreshStatus.textContent = '正在读取...';
+      }
+      const res = await fetch(`./latest.json?_=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error('latest.json 读取失败');
       render(await res.json());
+      if (showStatus) refreshStatus.textContent = '已读取最新报告。';
     }
 
     async function resummarize() {
@@ -118,6 +129,13 @@
     const storedKey = localStorage.getItem('deepseek_api_key');
     if (storedKey) apiKey.value = storedKey;
     resummarizeBtn.addEventListener('click', resummarize);
+    refreshBtn.addEventListener('click', () => {
+      loadReport(true).catch(err => {
+        refreshStatus.textContent = `刷新失败：${err.message}`;
+      }).finally(() => {
+        refreshBtn.disabled = false;
+      });
+    });
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
