@@ -2258,16 +2258,21 @@ def build_equity_map_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
 
 def build_status_module(results: list[SourceResult]) -> dict[str, Any]:
     statuses = [{"name": r.name, "ok": r.ok, "error": r.error, "elapsed_ms": r.elapsed_ms} for r in results]
+    market_data_cutoff = closed_daily_cutoff().isoformat()
+    status_items = [
+        f"行情截止：{market_data_cutoff}（北京时间15:10前取最近已收盘交易日，15:10后取当日收盘）"
+    ]
+    status_items.extend(
+        f"{'OK' if item['ok'] else 'FAIL'} {item['name']} ({item['elapsed_ms']}ms)"
+        + (f"：{item['error']}" if item.get("error") else "")
+        for item in statuses
+    )
     return {
         "type": "status",
         "title": "数据源状态与口径",
-        "summary": "失败源会保留在报告中；材料无直连价格时使用新闻/研报/题材线索，不填虚假报价。",
+        "summary": f"行情截止 {market_data_cutoff}；失败源会保留在报告中，材料无直连价格时使用新闻/研报/题材线索，不填虚假报价。",
         "statuses": statuses,
-        "items": [
-            f"{'OK' if item['ok'] else 'FAIL'} {item['name']} ({item['elapsed_ms']}ms)"
-            + (f"：{item['error']}" if item.get("error") else "")
-            for item in statuses
-        ],
+        "items": status_items,
     }
 
 
@@ -2464,6 +2469,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"# A股每日情报雷达 - {report['date']}",
         "",
         f"- 生成时间：{report['generated_at']}",
+        f"- 行情截止：{report.get('market_data_cutoff') or '未标注'}",
         f"- DeepSeek：{'已生成摘要' if report.get('ai_summary') else '未生成摘要'}",
         "",
         "## AI 投研摘要",
@@ -2501,10 +2507,13 @@ def write_report_files(report: dict[str, Any]) -> None:
 def emergency_report(error: str, tb: str) -> dict[str, Any]:
     ensure_env()
     generated_at = now_cn().strftime("%Y-%m-%d %H:%M:%S")
+    market_data_cutoff = closed_daily_cutoff().isoformat()
     result = SourceResult("运行异常", False, {"traceback": tb}, error=error, elapsed_ms=0)
     report = {
         "date": today_cn().isoformat(),
         "generated_at": generated_at,
+        "market_data_cutoff": market_data_cutoff,
+        "market_data_cutoff_note": "北京时间15:10前取最近已收盘交易日，15:10后取当日收盘。",
         "ai_summary": None,
         "ai_error": "生成流程异常，已输出降级报告",
         "raw_digest": f"生成流程异常：{error}\n\n{tb}",
@@ -2517,7 +2526,7 @@ def emergency_report(error: str, tb: str) -> dict[str, Any]:
                 "title": "数据源状态与口径",
                 "summary": "生成流程异常，已输出降级报告；请查看原始聚合摘要中的 traceback。",
                 "statuses": [{"name": result.name, "ok": result.ok, "error": result.error, "elapsed_ms": result.elapsed_ms}],
-                "items": [f"FAIL 运行异常：{error}"],
+                "items": [f"行情截止：{market_data_cutoff}", f"FAIL 运行异常：{error}"],
             }
         ],
         "sources": {result.name: {"ok": result.ok, "data": result.data, "error": result.error}},
@@ -2584,9 +2593,12 @@ def generate_report(
             }
         )
     generated_at = now_cn().strftime("%Y-%m-%d %H:%M:%S")
+    market_data_cutoff = closed_daily_cutoff().isoformat()
     report = {
         "date": today_cn().isoformat(),
         "generated_at": generated_at,
+        "market_data_cutoff": market_data_cutoff,
+        "market_data_cutoff_note": "北京时间15:10前取最近已收盘交易日，15:10后取当日收盘。",
         "ai_summary": ai_summary,
         "ai_error": ai_error,
         "raw_digest": raw_digest,

@@ -71,13 +71,26 @@
     const refreshBtn = document.getElementById('refreshBtn');
     const refreshStatus = document.getElementById('refreshStatus');
 
+    function describeMeta(data) {
+      const parts = [`${data.date || ''} ${data.generated_at || ''}`.trim()];
+      if (data.market_data_cutoff) parts.push(`行情截止 ${data.market_data_cutoff}`);
+      parts.push(data.ai_summary ? 'AI摘要已生成' : 'AI摘要未生成');
+      return parts.filter(Boolean).join(' · ');
+    }
+
     function render(data) {
       report = data;
-      meta.textContent = `${data.date || ''} ${data.generated_at || ''} · ${data.ai_summary ? 'AI摘要已生成' : 'AI摘要未生成'}`;
+      meta.textContent = describeMeta(data);
       IntelUI.renderModules(data.brief_sections, briefList);
       aiSummary.textContent = data.ai_summary || `AI 摘要未生成：${data.ai_error || '未配置或调用失败'}`;
       rawDigest.textContent = data.raw_digest || '暂无原始摘要。';
       jsonDump.textContent = JSON.stringify(data.sources || data, null, 2);
+    }
+
+    async function loadMetadata() {
+      const res = await fetch(`./metadata.json?_=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('metadata.json 读取失败');
+      return res.json();
     }
 
     async function loadReport(showStatus = false) {
@@ -85,8 +98,16 @@
         refreshBtn.disabled = true;
         refreshStatus.textContent = '正在读取...';
       }
-      const res = await fetch(`./latest.json?_=${Date.now()}`, { cache: 'no-store' });
-      if (!res.ok) throw new Error('latest.json 读取失败');
+      let reportUrl = './latest.json';
+      try {
+        const metadata = await loadMetadata();
+        if (metadata.report_url) reportUrl = metadata.report_url;
+      } catch (err) {
+        if (showStatus) refreshStatus.textContent = 'metadata 读取失败，尝试 latest.json...';
+      }
+      const sep = reportUrl.includes('?') ? '&' : '?';
+      const res = await fetch(`${reportUrl}${sep}_=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`${reportUrl} 读取失败`);
       render(await res.json());
       if (showStatus) refreshStatus.textContent = '已读取最新报告。';
     }

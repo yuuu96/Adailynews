@@ -53,6 +53,33 @@ jobs:
       - name: Build static site
         run: python build_static_site.py
 
+      - name: Verify built report freshness
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path("site/latest.json").read_text(encoding="utf-8"))
+          metadata = json.loads(Path("site/metadata.json").read_text(encoding="utf-8"))
+          print("report date:", data.get("date"))
+          print("generated_at:", data.get("generated_at"))
+          print("market_data_cutoff:", data.get("market_data_cutoff"))
+          print("metadata report_url:", metadata.get("report_url"))
+          for section in data.get("brief_sections", []):
+              if section.get("type") == "equity_map":
+                  for group in section.get("groups", []):
+                      if group.get("name") == "数据中心电力液冷":
+                          for stock in group.get("stocks", [])[:8]:
+                              print(
+                                  "quote",
+                                  stock.get("code"),
+                                  stock.get("name"),
+                                  stock.get("change_pct"),
+                                  stock.get("quote_date"),
+                                  stock.get("quote_source"),
+                              )
+          PY
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

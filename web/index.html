@@ -98,12 +98,18 @@
       progressText.textContent = '';
     }
 
+    function describeDate(report) {
+      const parts = [`${report.date || ''} ${report.generated_at || ''}`.trim()];
+      if (report.market_data_cutoff) parts.push(`行情截止 ${report.market_data_cutoff}`);
+      return parts.filter(Boolean).join(' · ');
+    }
+
     function render(report) {
       if (!report || report.empty) {
         setToast(report && report.message ? report.message : '');
         return;
       }
-      dateText.textContent = `${report.date || ''} ${report.generated_at || ''}`.trim();
+      dateText.textContent = describeDate(report);
       aiText.textContent = report.ai_summary ? 'DeepSeek 已生成' : `DeepSeek 未生成：${report.ai_error || '无'}`;
       IntelUI.renderModules(report.brief_sections, briefList);
       aiSummary.textContent = report.ai_summary || `AI 摘要未生成：${report.ai_error || '未知原因'}`;
