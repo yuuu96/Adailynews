@@ -1257,17 +1257,31 @@ def collect_cffex_positions() -> dict[str, Any]:
     if ak is None:
         raise RuntimeError("akshare is not installed")
     target_vars = ["IF", "IC", "IH", "IM"]
-    target_parties = ["中信", "国泰君安", "华泰", "海通", "广发", "银河", "申万", "招商"]
+    zhongxin_parties = ["中信期货"]
+    other_target_parties = ["中信建投", "国泰君安", "华泰", "海通", "广发", "银河", "申万", "招商"]
+    target_parties = zhongxin_parties + other_target_parties
     diagnostics = []
     rows: list[dict[str, Any]] = []
     query_date = ""
-    for offset in range(0, 15):
-        query_date = (today_cn() - timedelta(days=offset)).strftime("%Y%m%d")
+    normalized = []
+    summary_rows = []
+    aggregate = {
+        "中信期货": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0, "net_value": 0, "net_chg": 0},
+        "其它重点机构": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0, "net_value": 0, "net_chg": 0},
+        "重点机构合计": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0, "net_value": 0, "net_chg": 0},
+    }
+    aggregate_rows = []
+    five_day_directions = []
+    fallback_rows: list[dict[str, Any]] = []
+    fallback_date = ""
+    fallback_summary: dict[str, Any] | None = None
+
+    def fetch_day_rows(day: str) -> tuple[list[dict[str, Any]], str]:
         day_rows: list[dict[str, Any]] = []
         day_notes = []
         for var in target_vars:
             try:
-                payload = ak.get_cffex_rank_table(date=query_date, vars_list=[var])
+                payload = ak.get_cffex_rank_table(date=day, vars_list=[var])
                 if isinstance(payload, dict):
                     var_rows = []
                     for contract, frame in payload.items():
@@ -1286,26 +1300,19 @@ def collect_cffex_positions() -> dict[str, Any]:
                     day_notes.append(f"{var}:空")
             except Exception as exc:
                 day_notes.append(f"{var}:{type(exc).__name__}:{str(exc)[:80]}")
-        diagnostics.append(f"{query_date} " + " / ".join(day_notes))
-        if day_rows:
-            rows = day_rows
-            break
-
-    summaries = []
-    for row in rows:
-        text = text_from_record(row)
-        if not any(var in text for var in target_vars):
-            continue
-        if not any(party in text for party in target_parties):
-            continue
-        summaries.append(row)
-    normalized = []
-    party_summary: dict[tuple[str, str], dict[str, Any]] = {}
+        return day_rows, f"{day} " + " / ".join(day_notes)
 
     def clean_party(value: Any) -> str:
         return re.sub(r"\(.*?\)", "", str(value or "")).strip()
 
-    def add_party(symbol: str, party: Any, side: str, value: Any, chg: Any) -> None:
+    def add_party(
+        party_summary: dict[tuple[str, str], dict[str, Any]],
+        symbol: str,
+        party: Any,
+        side: str,
+        value: Any,
+        chg: Any,
+    ) -> None:
         party_name = clean_party(party)
         if not party_name or not any(target in party_name for target in target_parties):
             return
@@ -1324,54 +1331,128 @@ def collect_cffex_positions() -> dict[str, Any]:
         item[f"{side}_value"] += int(safe_float(value, 0))
         item[f"{side}_chg"] += int(safe_float(chg, 0))
 
-    for row in summaries[:80]:
-        cols = list(row.keys())
-        long_party = detect_columns(cols, ["long_party_name", "多单", "买持"])
-        short_party = detect_columns(cols, ["short_party_name", "空单", "卖持"])
-        long_value = detect_columns(cols, ["long_open_interest", "多单持仓", "买持仓"])
-        short_value = detect_columns(cols, ["short_open_interest", "空单持仓", "卖持仓"])
-        long_chg = detect_columns(cols, ["long_open_interest_chg", "多单持仓变化", "买持仓变化"])
-        short_chg = detect_columns(cols, ["short_open_interest_chg", "空单持仓变化", "卖持仓变化"])
-        symbol = row.get("variety") or row.get("symbol") or row.get("合约") or row.get("品种") or row.get("queried_var")
-        add_party(str(symbol), row.get(long_party) if long_party else None, "long", row.get(long_value), row.get(long_chg))
-        add_party(str(symbol), row.get(short_party) if short_party else None, "short", row.get(short_value), row.get(short_chg))
-        normalized.append(
-            {
-                "symbol": symbol,
-                "contract": row.get("contract"),
-                "long_party": row.get(long_party) if long_party else None,
-                "long_value": row.get(long_value) if long_value else None,
-                "long_chg": row.get(long_chg) if long_chg else None,
-                "short_party": row.get(short_party) if short_party else None,
-                "short_value": row.get(short_value) if short_value else None,
-                "short_chg": row.get(short_chg) if short_chg else None,
-                "raw": row,
-            }
+    def summarize_position_rows(day_rows: list[dict[str, Any]]) -> dict[str, Any]:
+        summaries = []
+        for row in day_rows:
+            text = text_from_record(row)
+            if not any(var in text for var in target_vars):
+                continue
+            if not any(party in text for party in target_parties):
+                continue
+            summaries.append(row)
+
+        normalized_rows = []
+        party_summary: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in summaries:
+            cols = list(row.keys())
+            long_party = detect_columns(cols, ["long_party_name", "多单", "买持"])
+            short_party = detect_columns(cols, ["short_party_name", "空单", "卖持"])
+            long_value = detect_columns(cols, ["long_open_interest", "多单持仓", "买持仓"])
+            short_value = detect_columns(cols, ["short_open_interest", "空单持仓", "卖持仓"])
+            long_chg = detect_columns(cols, ["long_open_interest_chg", "多单持仓变化", "买持仓变化"])
+            short_chg = detect_columns(cols, ["short_open_interest_chg", "空单持仓变化", "卖持仓变化"])
+            symbol = row.get("variety") or row.get("symbol") or row.get("合约") or row.get("品种") or row.get("queried_var")
+            add_party(party_summary, str(symbol), row.get(long_party) if long_party else None, "long", row.get(long_value), row.get(long_chg))
+            add_party(party_summary, str(symbol), row.get(short_party) if short_party else None, "short", row.get(short_value), row.get(short_chg))
+            normalized_rows.append(
+                {
+                    "symbol": symbol,
+                    "contract": row.get("contract"),
+                    "long_party": row.get(long_party) if long_party else None,
+                    "long_value": row.get(long_value) if long_value else None,
+                    "long_chg": row.get(long_chg) if long_chg else None,
+                    "short_party": row.get(short_party) if short_party else None,
+                    "short_value": row.get(short_value) if short_value else None,
+                    "short_chg": row.get(short_chg) if short_chg else None,
+                    "raw": row,
+                }
+            )
+
+        day_summary_rows = []
+        for item in party_summary.values():
+            item["net_value"] = item["long_value"] - item["short_value"]
+            item["net_chg"] = item["long_chg"] - item["short_chg"]
+            day_summary_rows.append(item)
+        day_summary_rows.sort(
+            key=lambda x: (
+                0 if any(name in x["party"] for name in zhongxin_parties) else 1,
+                x["symbol"],
+                -abs(x["net_value"]),
+            )
         )
-    summary_rows = []
-    for item in party_summary.values():
-        item["net_value"] = item["long_value"] - item["short_value"]
-        item["net_chg"] = item["long_chg"] - item["short_chg"]
-        summary_rows.append(item)
-    summary_rows.sort(key=lambda x: (0 if "中信" in x["party"] else 1, x["symbol"], -abs(x["net_value"])))
-    aggregate = {
-        "中信": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
-        "其它机构": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
-        "重点机构合计": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
-    }
-    for item in summary_rows:
-        target = "中信" if "中信" in item["party"] else "其它机构"
-        for field in ["long_value", "long_chg", "short_value", "short_chg"]:
-            aggregate[target][field] += int(item.get(field) or 0)
-            aggregate["重点机构合计"][field] += int(item.get(field) or 0)
-    for item in aggregate.values():
-        item["net_value"] = item["long_value"] - item["short_value"]
-        item["net_chg"] = item["long_chg"] - item["short_chg"]
-    aggregate_rows = []
-    for name in ["中信", "其它机构", "重点机构合计"]:
-        row = {"group": name, **aggregate[name]}
-        row["direction"] = "净多" if row["net_value"] > 0 else ("净空" if row["net_value"] < 0 else "持平")
-        aggregate_rows.append(row)
+
+        day_aggregate = {
+            "中信期货": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
+            "其它重点机构": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
+            "重点机构合计": {"long_value": 0, "long_chg": 0, "short_value": 0, "short_chg": 0},
+        }
+        for item in day_summary_rows:
+            target = "中信期货" if any(name in item["party"] for name in zhongxin_parties) else "其它重点机构"
+            for field in ["long_value", "long_chg", "short_value", "short_chg"]:
+                day_aggregate[target][field] += int(item.get(field) or 0)
+                day_aggregate["重点机构合计"][field] += int(item.get(field) or 0)
+        for item in day_aggregate.values():
+            item["net_value"] = item["long_value"] - item["short_value"]
+            item["net_chg"] = item["long_chg"] - item["short_chg"]
+            item["direction"] = "净多" if item["net_value"] > 0 else ("净空" if item["net_value"] < 0 else "持平")
+
+        day_aggregate_rows = []
+        for name in ["中信期货", "其它重点机构", "重点机构合计"]:
+            row = {"group": name, **day_aggregate[name]}
+            day_aggregate_rows.append(row)
+        return {
+            "normalized": normalized_rows,
+            "summary_rows": day_summary_rows,
+            "aggregate": day_aggregate,
+            "aggregate_rows": day_aggregate_rows,
+        }
+
+    last_query_date = ""
+    for offset in range(0, 15):
+        day = (today_cn() - timedelta(days=offset)).strftime("%Y%m%d")
+        last_query_date = day
+        day_rows, day_diagnostic = fetch_day_rows(day)
+        diagnostics.append(day_diagnostic)
+        if not day_rows:
+            continue
+        day_summary = summarize_position_rows(day_rows)
+        if not fallback_rows:
+            fallback_rows = day_rows
+            fallback_date = day
+            fallback_summary = day_summary
+        if not rows and day_summary["normalized"]:
+            rows = day_rows
+            query_date = day
+            normalized = day_summary["normalized"]
+            summary_rows = day_summary["summary_rows"]
+            aggregate = day_summary["aggregate"]
+            aggregate_rows = day_summary["aggregate_rows"]
+        if day_summary["normalized"]:
+            total = day_summary["aggregate"]["重点机构合计"]
+            zhongxin = day_summary["aggregate"]["中信期货"]
+            five_day_directions.append(
+                {
+                    "date": day,
+                    "direction": total.get("direction"),
+                    "net_value": total.get("net_value", 0),
+                    "net_chg": total.get("net_chg", 0),
+                    "zhongxin_direction": zhongxin.get("direction"),
+                    "zhongxin_net_value": zhongxin.get("net_value", 0),
+                    "zhongxin_net_chg": zhongxin.get("net_chg", 0),
+                }
+            )
+        if rows and len(five_day_directions) >= 5:
+            break
+
+    if not rows and fallback_rows and fallback_summary:
+        rows = fallback_rows
+        query_date = fallback_date
+        normalized = fallback_summary["normalized"]
+        summary_rows = fallback_summary["summary_rows"]
+        aggregate = fallback_summary["aggregate"]
+        aggregate_rows = fallback_summary["aggregate_rows"]
+    if not query_date:
+        query_date = last_query_date
     empty_reason = None
     if not rows:
         empty_reason = "最近15个自然日未取得中金所席位表，常见原因是周末/节假日、交易所未公布或 akshare 接口空返回。"
@@ -1383,8 +1464,10 @@ def collect_cffex_positions() -> dict[str, Any]:
         "raw_count": len(rows),
         "empty_reason": empty_reason,
         "diagnostics": diagnostics[:20],
+        "source_note": "数据源为 akshare.get_cffex_rank_table，即中金所前20会员持仓排名；中信期货单列，其它重点机构含中信建投、国泰君安、华泰、海通、广发、银河、申万、招商；净值=多单-空单；按 IF/IC/IH/IM 全部合约加总。",
         "aggregate": aggregate,
         "aggregate_rows": aggregate_rows,
+        "five_day_directions": five_day_directions[:5],
         "party_summary": summary_rows,
         "items": normalized,
     }
@@ -2127,11 +2210,33 @@ def build_futures_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
                     "direction": row.get("direction"),
                 }
             )
+        five_day_directions = futures.data.get("five_day_directions", []) or []
+        if five_day_directions:
+            direction_text = " / ".join(
+                f"{item.get('date')} {item.get('direction')}"
+                f"(合计净{item.get('net_value', 0)}, 变{item.get('net_chg', 0)})"
+                for item in five_day_directions[:5]
+            )
+            rows.append(
+                {
+                    "group": "前五日方向",
+                    "long_value": "",
+                    "long_chg": "",
+                    "short_value": "",
+                    "short_chg": "",
+                    "net_value": "",
+                    "net_chg": "",
+                    "direction": direction_text,
+                    "is_history": True,
+                }
+            )
     diagnostics = []
     empty_reason = None
+    source_note = None
     if futures and futures.ok:
         diagnostics = futures.data.get("diagnostics", []) or []
         empty_reason = futures.data.get("empty_reason")
+        source_note = futures.data.get("source_note")
     return {
         "type": "futures_summary",
         "title": "期指重点席位多空",
@@ -2139,6 +2244,7 @@ def build_futures_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
         "table": rows,
         "diagnostics": diagnostics,
         "empty_reason": empty_reason,
+        "source_note": source_note,
         "items": [
             f"{row['group']}：多{row['long_value']} / 空{row['short_value']} / 净{row['net_value']}"
             for row in rows
@@ -2299,19 +2405,19 @@ def build_raw_digest(results: list[SourceResult]) -> str:
         zhongxin = [
             x
             for x in data.get("party_summary", [])
-            if "中信" in x.get("party", "")
+            if "中信期货" in x.get("party", "")
         ][:4]
         zhongxin_text = "；".join(
             f"{x['symbol']} 多{x['long_value']}/空{x['short_value']}/净{x['net_value']}"
             for x in zhongxin
         )
-        zx = aggregate.get("中信", {})
+        zx = aggregate.get("中信期货", {})
         inst = aggregate.get("重点机构合计", {})
         lines.append(
             f"期指席位：{data.get('date')} 命中重点席位 {data.get('count')} 条。"
-            f"中信合计 多{zx.get('long_value', 0)}/空{zx.get('short_value', 0)}/净{zx.get('net_value', 0)}；"
+            f"中信期货 多{zx.get('long_value', 0)}/空{zx.get('short_value', 0)}/净{zx.get('net_value', 0)}；"
             f"重点机构合计 多{inst.get('long_value', 0)}/空{inst.get('short_value', 0)}/净{inst.get('net_value', 0)}。"
-            f"中信分品种：{zhongxin_text or '未命中'}。"
+            f"中信期货分品种：{zhongxin_text or '未命中'}。"
             + (f"诊断：{data.get('empty_reason')}。" if data.get("empty_reason") else "")
         )
     commodities = sources.get("材料雷达") or sources.get("商品价格")

@@ -221,19 +221,21 @@
   function renderFutures(section) {
     const diagnostics = (section.diagnostics || []).slice(0, 8).map(item => `<li>${escapeHtml(item)}</li>`).join('');
     const reason = section.empty_reason ? `<div class="small">${escapeHtml(section.empty_reason)}</div>` : '';
+    const sourceNote = section.source_note ? `<div class="small">${escapeHtml(section.source_note)}</div>` : '';
     return table(
       [
         { label: '组别', key: 'group' },
         { label: '多单', key: 'long_value' },
-        { label: '多单变化', key: 'long_chg', render: r => signed(r.long_chg) },
+        { label: '多单变化', key: 'long_chg', render: r => r.is_history ? '' : signed(r.long_chg) },
         { label: '空单', key: 'short_value' },
-        { label: '空单变化', key: 'short_chg', render: r => signed(r.short_chg) },
-        { label: '净值', key: 'net_value', render: r => signed(r.net_value) },
-        { label: '净变化', key: 'net_chg', render: r => signed(r.net_chg) },
+        { label: '空单变化', key: 'short_chg', render: r => r.is_history ? '' : signed(r.short_chg) },
+        { label: '净值', key: 'net_value', render: r => r.is_history ? '' : signed(r.net_value) },
+        { label: '净变化', key: 'net_chg', render: r => r.is_history ? '' : signed(r.net_chg) },
         { label: '方向', key: 'direction' }
       ],
       section.table || []
     ) + `
+      ${sourceNote}
       ${reason}
       ${diagnostics ? `<details class="soft-panel" style="margin-top:8px"><summary>期指数据诊断</summary><ul>${diagnostics}</ul></details>` : ''}
     `;
