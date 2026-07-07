@@ -468,6 +468,13 @@ def closed_daily_cutoff(now: datetime | None = None) -> date:
     return cutoff
 
 
+def cffex_position_start_date(now: datetime | None = None) -> tuple[date, str]:
+    current = now or now_cn()
+    if current.hour < 20:
+        return current.date() - timedelta(days=1), "北京时间20:00前从前一天开始回看最近已公布中金所席位数据"
+    return current.date(), "北京时间20:00后从当天开始回看最近已公布中金所席位数据"
+
+
 def trend_label(change_pct: float | None) -> str:
     value = safe_float(change_pct, 0)
     if value >= 3:
@@ -1275,6 +1282,7 @@ def collect_cffex_positions() -> dict[str, Any]:
     fallback_rows: list[dict[str, Any]] = []
     fallback_date = ""
     fallback_summary: dict[str, Any] | None = None
+    start_date, date_policy = cffex_position_start_date()
 
     def fetch_day_rows(day: str) -> tuple[list[dict[str, Any]], str]:
         day_rows: list[dict[str, Any]] = []
@@ -1409,7 +1417,7 @@ def collect_cffex_positions() -> dict[str, Any]:
 
     last_query_date = ""
     for offset in range(0, 15):
-        day = (today_cn() - timedelta(days=offset)).strftime("%Y%m%d")
+        day = (start_date - timedelta(days=offset)).strftime("%Y%m%d")
         last_query_date = day
         day_rows, day_diagnostic = fetch_day_rows(day)
         diagnostics.append(day_diagnostic)
@@ -1464,7 +1472,8 @@ def collect_cffex_positions() -> dict[str, Any]:
         "raw_count": len(rows),
         "empty_reason": empty_reason,
         "diagnostics": diagnostics[:20],
-        "source_note": "数据源为 akshare.get_cffex_rank_table，即中金所前20会员持仓排名；中信期货单列，其它重点机构含中信建投、国泰君安、华泰、海通、广发、银河、申万、招商；净值=多单-空单；按 IF/IC/IH/IM 全部合约加总。",
+        "date_policy": date_policy,
+        "source_note": f"数据源为 akshare.get_cffex_rank_table，即中金所前20会员持仓排名；{date_policy}；中信期货单列，其它重点机构含中信建投、国泰君安、华泰、海通、广发、银河、申万、招商；净值=多单-空单；按 IF/IC/IH/IM 全部合约加总。",
         "aggregate": aggregate,
         "aggregate_rows": aggregate_rows,
         "five_day_directions": five_day_directions[:5],
@@ -2233,14 +2242,19 @@ def build_futures_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     diagnostics = []
     empty_reason = None
     source_note = None
+    date_policy = None
     if futures and futures.ok:
         diagnostics = futures.data.get("diagnostics", []) or []
         empty_reason = futures.data.get("empty_reason")
         source_note = futures.data.get("source_note")
+        date_policy = futures.data.get("date_policy")
     return {
         "type": "futures_summary",
         "title": "期指重点席位多空",
-        "summary": f"中金所 IF/IC/IH/IM 重点席位汇总，日期 {futures.data.get('date') if futures and futures.ok else '暂无'}。",
+        "summary": (
+            f"中金所 IF/IC/IH/IM 重点席位汇总，日期 {futures.data.get('date') if futures and futures.ok else '暂无'}。"
+            + (f"{date_policy}。" if date_policy else "")
+        ),
         "table": rows,
         "diagnostics": diagnostics,
         "empty_reason": empty_reason,
