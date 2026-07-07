@@ -1822,25 +1822,14 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
     one_word_count = int(sector["one_word_count"])
     break_count = int(sector["break_count"])
     avg_change = sector["change_sum"] / sector["change_count"] if sector["change_count"] else 0
-    tag_count = sum(sector["tag_counter"].values())
-    industry_span = len(sector["industry_counter"])
 
     flow_days = sector_flow_days(sector["name"], history, {**sector, "amount_yi": amount_yi})
     flow_score = min(20, flow_days * 4 + hot_stock_count * 0.8 + limit_up_count * 1.2)
-    diffusion_score = min(15, stock_count * 1.2 + tag_count * 0.7 + industry_span * 1.5)
     limit_score = min(15, limit_up_count * 2.4 + one_word_count * 1.8 + safe_float(sector["max_board"]) * 1.2 - break_count * 0.8)
     price_score = min(20, max(avg_change, 0) * 1.6 + max(limit_up_count, 0) * 0.6)
     volume_score = min(20, min(amount_yi / 15, 14) + stock_count * 0.8 + hot_stock_count * 0.4)
-    catalyst_score = min(10, catalyst_count * 2.5)
-    risk_penalty = 0.0
-    if stock_count <= 1 and (hot_stock_count + limit_up_count) > 0:
-        risk_penalty += 4
-    if avg_change >= 8 and catalyst_count == 0:
-        risk_penalty += 5
-    if limit_up_count and break_count / max(limit_up_count, 1) >= 0.6:
-        risk_penalty += 5
-
-    score = max(0, min(100, flow_score + diffusion_score + limit_score + price_score + volume_score + catalyst_score - risk_penalty))
+    score_raw = max(0, flow_score + limit_score + price_score + volume_score)
+    score = min(100, score_raw / 75 * 100)
     signals = []
     if flow_days >= 2:
         signals.append(f"连续{flow_days}日增强")
@@ -1848,8 +1837,6 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
         signals.append("强势股集中")
     if limit_up_count >= 3:
         signals.append("涨停行业集中")
-    if catalyst_count >= 3:
-        signals.append("催化密度提升")
     if rank_change and rank_change > 0:
         signals.append(f"排名上升{rank_change}位")
 
@@ -1872,12 +1859,9 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
         "avg_change_pct": round(avg_change, 2),
         "score_breakdown": {
             "资金连续性": round(flow_score, 1),
-            "题材扩散": round(diffusion_score, 1),
             "涨停结构": round(limit_score, 1),
             "价格强度": round(price_score, 1),
             "成交放大": round(volume_score, 1),
-            "催化密度": round(catalyst_score, 1),
-            "风险扣分": round(risk_penalty, 1),
         },
         "topic_tags": [{"name": name, "count": count} for name, count in sector["tag_counter"].most_common(6)],
         "industries": [{"name": name, "count": count} for name, count in sector["industry_counter"].most_common(5)],
@@ -2032,7 +2016,7 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
     return {
         "type": "sector_radar",
         "title": "板块异动雷达",
-        "summary": "资金连续性、题材扩散、涨停结构、价格强度、成交放大、催化密度和风险扣分综合评分。",
+        "summary": "资金连续性、涨停结构、价格强度和成交放大四项综合评分，满分按四项权重归一到100。",
         "top_sectors": top_sectors,
         "watch_sectors": watch_sectors,
         "cooling_sectors": cooling_sectors,

@@ -104,7 +104,7 @@
     `).join('');
     const renderBreakdown = item => {
       const breakdown = item.score_breakdown || {};
-      return ['资金连续性', '题材扩散', '涨停结构', '价格强度', '成交放大', '催化密度', '风险扣分']
+      return ['资金连续性', '涨停结构', '价格强度', '成交放大']
         .filter(key => breakdown[key] !== undefined && breakdown[key] !== null)
         .map(key => `<span>${escapeHtml(key)} ${fmt(breakdown[key])}</span>`)
         .join('');
