@@ -22,6 +22,8 @@
     </div>
   </header>
   <main>
+    <section class="decision-section" id="decisionBrief"></section>
+
     <section>
       <div class="section-head">
         <div>
@@ -70,6 +72,7 @@
     const resummarizeBtn = document.getElementById('resummarizeBtn');
     const refreshBtn = document.getElementById('refreshBtn');
     const refreshStatus = document.getElementById('refreshStatus');
+    const decisionBrief = document.getElementById('decisionBrief');
 
     function describeMeta(data) {
       const parts = [`${data.date || ''} ${data.generated_at || ''}`.trim()];
@@ -81,6 +84,7 @@
     function render(data) {
       report = data;
       meta.textContent = describeMeta(data);
+      IntelUI.renderDecisionBrief(data.decision_brief, decisionBrief);
       IntelUI.renderModules(data.brief_sections, briefList);
       aiSummary.textContent = data.ai_summary || `AI 摘要未生成：${data.ai_error || '未配置或调用失败'}`;
       rawDigest.textContent = data.raw_digest || '暂无原始摘要。';

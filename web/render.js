@@ -22,6 +22,25 @@
     return `<span class="${cls}">${sign}${fmt(n)}</span>`;
   }
 
+  function renderQuality(section) {
+    const chips = [];
+    if (section.freshness) chips.push({ label: section.freshness, cls: `fresh-${section.freshness}` });
+    if (section.confidence) chips.push({ label: `${section.confidence}置信`, cls: section.confidence === '低' ? 'low' : (section.confidence === '高' ? 'high' : '') });
+    if (section.source_date) chips.push({ label: `来源 ${section.source_date}`, cls: 'date' });
+    const warnings = section.warnings || [];
+    if (warnings.length) chips.push({ label: `提示 ${warnings.length}`, cls: 'warn' });
+    if (!chips.length) return '';
+    const warnHtml = warnings.length
+      ? `<details class="quality-warnings"><summary>查看口径提示</summary><ul>${warnings.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details>`
+      : '';
+    return `
+      <div class="quality-row">
+        ${chips.map(chip => `<span class="quality-pill ${escapeHtml(chip.cls || '')}">${escapeHtml(chip.label)}</span>`).join('')}
+      </div>
+      ${warnHtml}
+    `;
+  }
+
   function pct(value) {
     if (value === null || value === undefined || value === '') {
       return '<span class="neutral">NA</span>';
@@ -318,6 +337,58 @@
     return `<div class="status-grid">${rows || '<div class="small">暂无状态。</div>'}</div>`;
   }
 
+  function renderDecisionBrief(brief, target) {
+    if (!target) return;
+    if (!brief || !Object.keys(brief).length) {
+      target.style.display = 'none';
+      target.innerHTML = '';
+      return;
+    }
+    target.style.display = '';
+    const directions = (brief.top_directions || []).map(item => `
+      <div class="decision-card primary">
+        <div class="decision-card-head">
+          <h3>${escapeHtml(item.name || '未命名方向')}</h3>
+          <span class="decision-score">${fmt(item.strength)}</span>
+        </div>
+        <div class="chip-row compact">
+          ${(item.core_stocks || []).map(stock => `<span class="chip">${escapeHtml(stock.name || '')}${stock.code ? `(${escapeHtml(stock.code)})` : ''} ${pct(stock.change_pct)}</span>`).join('') || '<span class="small">暂无核心票</span>'}
+        </div>
+        <ul class="decision-evidence">
+          ${(item.evidence || []).slice(0, 4).map(text => `<li>${escapeHtml(text)}</li>`).join('')}
+        </ul>
+      </div>
+    `).join('');
+    const watch = (brief.tomorrow_watchlist || []).map(item => `
+      <div class="decision-card">
+        <h3>${escapeHtml(item.direction || '观察方向')}</h3>
+        <div class="decision-line"><span>核心</span><strong>${escapeHtml(item.core || '等待确认')}</strong></div>
+        <div class="decision-line"><span>触发</span><p>${escapeHtml(item.trigger || '')}</p></div>
+        <div class="decision-line"><span>失效</span><p>${escapeHtml(item.invalid || '')}</p></div>
+      </div>
+    `).join('');
+    const risks = (brief.risk_flags || []).map(item => `
+      <div class="risk-flag ${escapeHtml(item.level || 'note')}">${escapeHtml(item.text || '')}</div>
+    `).join('');
+    const notes = (brief.data_notes || []).map(item => `
+      <span class="quality-pill date">${escapeHtml(item.label || '')}：${escapeHtml(item.value || '')}</span>
+    `).join('');
+    target.innerHTML = `
+      <div class="section-head decision-head">
+        <div>
+          <h2>${escapeHtml(brief.title || '交易准备卡')}</h2>
+          <p>${escapeHtml(brief.summary || '')}</p>
+        </div>
+      </div>
+      <div class="decision-notes">${notes}</div>
+      <div class="decision-grid">${directions || '<div class="digest">暂无明确强方向。</div>'}</div>
+      <h3>明日观察</h3>
+      <div class="decision-grid watch">${watch || '<div class="small">暂无观察项。</div>'}</div>
+      <h3>风险与口径</h3>
+      <div class="risk-list">${risks || '<div class="risk-flag note">暂无高优先级异常提示。</div>'}</div>
+    `;
+  }
+
   function renderBody(section) {
     switch (section.type) {
       case 'fermentation': return renderFermentation(section);
@@ -349,6 +420,7 @@
             </div>
           </div>
         </div>
+        ${renderQuality(section)}
         ${renderBody(section)}
       </article>
     `).join('');
@@ -369,6 +441,7 @@
   window.IntelUI = {
     escapeHtml,
     linkify,
+    renderDecisionBrief,
     renderModules,
     renderStatus,
   };

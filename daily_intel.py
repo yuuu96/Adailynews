@@ -16,6 +16,7 @@ import signal
 import time
 import traceback
 import urllib.request
+from copy import deepcopy
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout, as_completed
 from dataclasses import dataclass
@@ -43,6 +44,7 @@ SECTOR_RADAR_DIR = ROOT / "reports" / "sector_radar"
 SECTOR_RADAR_HISTORY = SECTOR_RADAR_DIR / "history.jsonl"
 LATEST_JSON = REPORT_DIR / "latest.json"
 LATEST_MD = REPORT_DIR / "latest.md"
+CONFIG_PATH = ROOT / "config" / "intel_config.json"
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 CN_TZ = ZoneInfo("Asia/Shanghai")
@@ -332,6 +334,88 @@ MATERIAL_CONFIG = [
         "related_codes": ["600703", "688234", "300373", "300102", "603688", "300395", "600293"],
     },
 ]
+
+_INTEL_CONFIG_CACHE: dict[str, Any] | None = None
+
+
+def load_intel_config() -> dict[str, Any]:
+    """Load user-adjustable intelligence settings from the repository."""
+    global _INTEL_CONFIG_CACHE
+    if _INTEL_CONFIG_CACHE is not None:
+        return _INTEL_CONFIG_CACHE
+    try:
+        _INTEL_CONFIG_CACHE = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        _INTEL_CONFIG_CACHE = {}
+    except Exception as exc:
+        _INTEL_CONFIG_CACHE = {"_error": f"{type(exc).__name__}: {str(exc)[:180]}"}
+    return _INTEL_CONFIG_CACHE
+
+
+def configured_dict(key: str, default: dict[str, Any]) -> dict[str, Any]:
+    value = load_intel_config().get(key)
+    if not isinstance(value, dict):
+        return default
+    merged = deepcopy(default)
+    for name, item in value.items():
+        merged[name] = item
+    return merged
+
+
+def configured_list(key: str, default: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    value = load_intel_config().get(key)
+    return value if isinstance(value, list) else default
+
+
+def configured_watchlist() -> dict[str, list[str]]:
+    return configured_dict("watchlist", WATCHLIST)
+
+
+def configured_focus_topics() -> dict[str, list[str]]:
+    return configured_dict("focus_topics", FOCUS_TOPICS)
+
+
+def configured_focus_event_groups() -> dict[str, list[str]]:
+    return configured_dict("focus_event_groups", FOCUS_EVENT_GROUPS)
+
+
+def configured_focus_event_anchors() -> dict[str, list[str]]:
+    return configured_dict("focus_event_anchors", FOCUS_EVENT_ANCHORS)
+
+
+def configured_focus_stocks() -> dict[str, str]:
+    return configured_dict("focus_stocks", FOCUS_STOCKS)
+
+
+def configured_tracked_analysts() -> list[dict[str, Any]]:
+    return configured_list("tracked_analysts", TRACKED_ANALYSTS)
+
+
+def configured_material_config() -> list[dict[str, Any]]:
+    config = load_intel_config()
+    full_materials = config.get("materials")
+    if isinstance(full_materials, list):
+        return full_materials
+    overrides = config.get("material_overrides")
+    if not isinstance(overrides, dict):
+        return MATERIAL_CONFIG
+    materials = []
+    for item in MATERIAL_CONFIG:
+        merged = deepcopy(item)
+        patch = overrides.get(item.get("name"))
+        if isinstance(patch, dict):
+            merged.update(patch)
+        if merged.get("enabled", True):
+            materials.append(merged)
+    return materials
+
+
+def configured_decision_options() -> dict[str, Any]:
+    value = load_intel_config().get("decision_brief")
+    default = {"max_top_directions": 3, "max_watch_items": 5, "max_risk_flags": 6}
+    if isinstance(value, dict):
+        return {**default, **value}
+    return default
 
 POSITIVE_WORDS = [
     "上调",
@@ -661,11 +745,12 @@ def apply_daily_close_overrides(quotes: dict[str, dict[str, Any]], max_seconds: 
 
 def collect_watchlist_quotes() -> dict[str, list[dict[str, Any]]]:
     all_codes: list[str] = []
-    for codes in WATCHLIST.values():
+    watchlist = configured_watchlist()
+    for codes in watchlist.values():
         all_codes.extend(codes)
     quotes = apply_daily_close_overrides(tencent_quote(sorted(set(all_codes))), max_seconds=20)
     grouped = {}
-    for theme, codes in WATCHLIST.items():
+    for theme, codes in watchlist.items():
         grouped[theme] = [quotes[code] for code in codes if code in quotes]
         grouped[theme].sort(key=lambda item: item.get("amount_yi", 0), reverse=True)
     return grouped
@@ -874,8 +959,8 @@ def is_foreign_org_hit(text: str) -> bool:
 
 
 def is_focus_event_hit(group: str, text: str) -> bool:
-    anchors = FOCUS_EVENT_ANCHORS.get(group, [])
-    keywords = FOCUS_EVENT_GROUPS.get(group, [])
+    anchors = configured_focus_event_anchors().get(group, [])
+    keywords = configured_focus_event_groups().get(group, [])
     if not is_keyword_hit(text, anchors):
         return False
     return is_keyword_hit(text, keywords)
@@ -885,14 +970,16 @@ def collect_news() -> dict[str, Any]:
     if ak is None:
         raise RuntimeError("akshare is not installed")
     items = []
-    focus: dict[str, list[dict[str, Any]]] = {topic: [] for topic in FOCUS_TOPICS}
+    focus_topics = configured_focus_topics()
+    event_groups = configured_focus_event_groups()
+    focus: dict[str, list[dict[str, Any]]] = {topic: [] for topic in focus_topics}
     try:
         df = ak.stock_info_global_em()
         for row in (jsonable(df) or [])[:160]:
             item = normalize_news_item("东财快讯", row)
-            if is_theme_hit(item["text"]) or is_foreign_org_hit(item["text"]) or any(is_keyword_hit(item["text"], keywords) for keywords in FOCUS_EVENT_GROUPS.values()):
+            if is_theme_hit(item["text"]) or is_foreign_org_hit(item["text"]) or any(is_keyword_hit(item["text"], keywords) for keywords in event_groups.values()):
                 items.append(item)
-                for topic, keywords in FOCUS_TOPICS.items():
+                for topic, keywords in focus_topics.items():
                     if is_keyword_hit(item["text"], keywords):
                         focus[topic].append(item)
     except Exception as exc:
@@ -908,7 +995,9 @@ def collect_cls_news() -> dict[str, Any]:
     if ak is None:
         raise RuntimeError("akshare is not installed")
     items = []
-    focus: dict[str, list[dict[str, Any]]] = {topic: [] for topic in FOCUS_TOPICS}
+    focus_topics = configured_focus_topics()
+    event_groups = configured_focus_event_groups()
+    focus: dict[str, list[dict[str, Any]]] = {topic: [] for topic in focus_topics}
     for source_name, loader in [
         ("财联社重点", lambda: ak.stock_info_global_cls(symbol="重点")),
         ("财联社全部", lambda: ak.stock_info_global_cls(symbol="全部")),
@@ -917,9 +1006,9 @@ def collect_cls_news() -> dict[str, Any]:
             df = loader()
             for row in (jsonable(df) or [])[:120]:
                 item = normalize_news_item(source_name, row)
-                if is_theme_hit(item["text"]) or is_foreign_org_hit(item["text"]) or any(is_keyword_hit(item["text"], keywords) for keywords in FOCUS_EVENT_GROUPS.values()):
+                if is_theme_hit(item["text"]) or is_foreign_org_hit(item["text"]) or any(is_keyword_hit(item["text"], keywords) for keywords in event_groups.values()):
                     items.append(item)
-                    for topic, keywords in FOCUS_TOPICS.items():
+                    for topic, keywords in focus_topics.items():
                         if is_keyword_hit(item["text"], keywords):
                             focus[topic].append(item)
         except Exception as exc:
@@ -964,7 +1053,8 @@ def collect_focus_announcements() -> dict[str, Any]:
     start = (today_cn() - timedelta(days=2)).strftime("%Y%m%d")
     end = today_cn().strftime("%Y%m%d")
     priority_keywords = ["业绩预告", "半年", "半年度", "日常经营", "风险提示", "其他融资", "锂矿", "复产", "储能", "电池"]
-    for code, name in FOCUS_STOCKS.items():
+    event_groups = configured_focus_event_groups()
+    for code, name in configured_focus_stocks().items():
         try:
             df = ak.stock_zh_a_disclosure_report_cninfo(
                 symbol=code,
@@ -978,7 +1068,7 @@ def collect_focus_announcements() -> dict[str, Any]:
                 item["stock_name"] = name
                 if not is_recent_time(item.get("time"), hours=48):
                     continue
-                if is_keyword_hit(item["text"], priority_keywords + FOCUS_EVENT_GROUPS.get(name, [])):
+                if is_keyword_hit(item["text"], priority_keywords + event_groups.get(name, [])):
                     items.append(item)
         except Exception as exc:
             items.append({"source": f"巨潮公告/{name}", "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
@@ -1069,7 +1159,7 @@ def match_tracked_analysts(row: dict[str, Any]) -> list[dict[str, Any]]:
     text = text_from_record(row)
     org = str(row.get("orgSName") or "")
     matches = []
-    for target in TRACKED_ANALYSTS:
+    for target in configured_tracked_analysts():
         broker_aliases = BROKER_ALIAS_MAP.get(target["broker"], [target["broker"]])
         broker_hit = any(alias in org or alias in text for alias in broker_aliases)
         analyst_hit = any(alias in text for alias in target["aliases"])
@@ -1138,7 +1228,7 @@ def collect_reports() -> dict[str, Any]:
         "items": theme_hits,
         "cicc_reports": cicc_hits,
         "analyst_reports": analyst_hits,
-        "analyst_watchlist": TRACKED_ANALYSTS,
+        "analyst_watchlist": configured_tracked_analysts(),
         "window": {"begin": begin, "end": end},
     }
 
@@ -1183,7 +1273,8 @@ def collect_material_inventory(symbol: str) -> dict[str, Any] | None:
 def collect_material_radar() -> dict[str, Any]:
     if ak is None:
         raise RuntimeError("akshare is not installed")
-    all_codes = sorted({code for item in MATERIAL_CONFIG for code in item.get("related_codes", [])})
+    material_config = configured_material_config()
+    all_codes = sorted({code for item in material_config for code in item.get("related_codes", [])})
     quote_error = None
     try:
         quote_map = call_with_alarm(
@@ -1195,7 +1286,7 @@ def collect_material_radar() -> dict[str, Any]:
         quote_error = f"{type(exc).__name__}: {str(exc)[:160]}"
         quote_map = {}
     items = []
-    for config in MATERIAL_CONFIG:
+    for config in material_config:
         price_enabled = config["name"] == "碳酸锂"
         price = None
         price_error = None
@@ -1486,8 +1577,47 @@ def source_map(results: list[SourceResult]) -> dict[str, SourceResult]:
     return {result.name: result for result in results}
 
 
+def source_warning(source: SourceResult | None, label: str | None = None) -> str | None:
+    if source and not source.ok:
+        return f"{label or source.name}失败：{source.error or '未知原因'}"
+    return None
+
+
+def first_non_empty(*values: Any) -> Any:
+    for value in values:
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def quality_meta(
+    source_date: Any = None,
+    freshness: str = "回看",
+    confidence: str = "中",
+    warnings: list[str | None] | None = None,
+) -> dict[str, Any]:
+    return {
+        "source_date": str(source_date or ""),
+        "freshness": freshness,
+        "confidence": confidence,
+        "warnings": [str(item) for item in (warnings or []) if item],
+    }
+
+
+def confidence_from_sources(sources: list[SourceResult | None], has_data: bool = True) -> str:
+    known = [source for source in sources if source is not None]
+    if not has_data:
+        return "低"
+    if known and all(source.ok for source in known):
+        return "高"
+    if any(source and source.ok for source in known):
+        return "中"
+    return "低"
+
+
 def build_focus_items(sources: dict[str, SourceResult]) -> list[str]:
-    focus: dict[str, list[str]] = {topic: [] for topic in FOCUS_TOPICS}
+    focus_topics = configured_focus_topics()
+    focus: dict[str, list[str]] = {topic: [] for topic in focus_topics}
 
     def add(topic: str, text: str) -> None:
         text = re.sub(r"\s+", " ", str(text or "")).strip()
@@ -1505,7 +1635,7 @@ def build_focus_items(sources: dict[str, SourceResult]) -> list[str]:
         for item in (reports.data.get("items") or [])[:30]:
             text = f"{item.get('title')} {item.get('summary')}"
             upper = text.upper()
-            for topic, keywords in FOCUS_TOPICS.items():
+            for topic, keywords in focus_topics.items():
                 if any(keyword.upper() in upper for keyword in keywords):
                     add(topic, f"研报 {item.get('date')} {item.get('org') or ''}：{item.get('title')} {item.get('pdf_url') or ''}")
 
@@ -1514,7 +1644,7 @@ def build_focus_items(sources: dict[str, SourceResult]) -> list[str]:
         for item in (ths.data.get("top") or [])[:80]:
             text = f"{item.get('name')}({item.get('code')}) {item.get('reason')}"
             upper = text.upper()
-            for topic, keywords in FOCUS_TOPICS.items():
+            for topic, keywords in focus_topics.items():
                 if any(keyword.upper() in upper for keyword in keywords):
                     add(topic, f"强势股 {text}")
 
@@ -1524,7 +1654,7 @@ def build_focus_items(sources: dict[str, SourceResult]) -> list[str]:
             for note in item.get("notes", [])[:5]:
                 text = f"{note.get('title')} {note.get('summary')}"
                 upper = text.upper()
-                for topic, keywords in FOCUS_TOPICS.items():
+                for topic, keywords in focus_topics.items():
                     if any(keyword.upper() in upper for keyword in keywords):
                         add(topic, f"价格线索 {note.get('date')} {note.get('org') or ''}：{note.get('title')} {note.get('pdf_url') or ''}")
 
@@ -1667,6 +1797,7 @@ def collect_overseas_opinions(sources: dict[str, SourceResult]) -> list[dict[str
 
 def collect_focus_events(sources: dict[str, SourceResult]) -> list[dict[str, Any]]:
     events = []
+    event_groups = configured_focus_event_groups()
 
     def add_event(group: str, item: dict[str, Any], fallback_source: str, kind: str) -> None:
         text = item.get("text") or " ".join(str(item.get(k) or "") for k in ["title", "content", "summary"])
@@ -1699,7 +1830,7 @@ def collect_focus_events(sources: dict[str, SourceResult]) -> list[dict[str, Any
             continue
         for item in source.data.get("items", []):
             text = item.get("text") or ""
-            for group, keywords in FOCUS_EVENT_GROUPS.items():
+            for group, keywords in event_groups.items():
                 candidate_text = f"{text} {item.get('source') or ''} {item.get('stock_name') or ''}"
                 if is_focus_event_hit(group, candidate_text):
                     add_event(group, item, source_name, kind)
@@ -1708,7 +1839,7 @@ def collect_focus_events(sources: dict[str, SourceResult]) -> list[dict[str, Any
     if reports and reports.ok:
         for item in reports.data.get("items", []):
             text = f"{item.get('title') or ''} {item.get('summary') or ''}"
-            for group, keywords in FOCUS_EVENT_GROUPS.items():
+            for group, keywords in event_groups.items():
                 if is_focus_event_hit(group, text):
                     add_event(group, {**item, "text": text, "time": item.get("date"), "link": item.get("url") or item.get("pdf_url"), "source": f"研报/{item.get('org') or ''}"}, "机构研报", "研报线索")
 
@@ -2105,10 +2236,21 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
         f"{item['name']}：综合{item['score']}，连续{item['flow_days']}日增强，涨停{item['limit_up_count']}只，强势{item['hot_stock_count']}只，催化{item['catalyst_count']}条。"
         for item in top_sectors[:6]
     ] or ["暂无足够数据生成板块异动雷达。"]
+    warnings = [
+        source_warning(sources.get("同花顺热点")),
+        source_warning(sources.get("涨停池")),
+        source_warning(sources.get("产业链行情")),
+    ]
     return {
         "type": "sector_radar",
         "title": "板块异动雷达",
         "summary": "资金连续性、涨停结构、价格强度和成交放大四项综合评分，满分按四项权重归一到100。",
+        **quality_meta(
+            source_date=current_date,
+            freshness="当天" if ranked else "缺失",
+            confidence=confidence_from_sources([sources.get("同花顺热点"), sources.get("涨停池"), sources.get("产业链行情")], bool(ranked)),
+            warnings=warnings,
+        ),
         "top_sectors": top_sectors,
         "watch_sectors": watch_sectors,
         "cooling_sectors": cooling_sectors,
@@ -2133,6 +2275,12 @@ def build_fermentation_module(sources: dict[str, SourceResult]) -> dict[str, Any
         "type": "fermentation",
         "title": "最强发酵方向",
         "summary": "同花顺题材词频 + 涨停池行业集中度 + 一字板明细。",
+        **quality_meta(
+            source_date=first_non_empty(ths.data.get("date") if ths and ths.ok else None, limit_up.data.get("date") if limit_up and limit_up.ok else None, today_cn().isoformat()),
+            freshness="当天" if (ths and ths.ok) or (limit_up and limit_up.ok) else "缺失",
+            confidence=confidence_from_sources([ths, limit_up], bool(tag_top or industry_top or one_word)),
+            warnings=[source_warning(ths), source_warning(limit_up)],
+        ),
         "metrics": metrics,
         "tags": [{"name": name, "count": count} for name, count in tag_top],
         "industries": [{"name": name, "count": count} for name, count in industry_top],
@@ -2150,11 +2298,23 @@ def build_material_radar_module(sources: dict[str, SourceResult]) -> dict[str, A
     material_source = sources.get("材料雷达") or sources.get("商品价格")
     rows = material_source.data.get("items", []) if material_source and material_source.ok else []
     materials = []
+    warnings = [source_warning(material_source)]
+    source_date = ""
     for row in rows:
         hits = material_hits(row, sources, limit=6)
         price = row.get("price")
         inventory = row.get("inventory")
         related = row.get("related_stocks") or []
+        if not source_date and price:
+            source_date = first_non_empty(price.get("date"), price.get("time"))
+        if not source_date and isinstance(inventory, dict):
+            source_date = first_non_empty(inventory.get("date"), source_date)
+        if row.get("quote_error"):
+            warnings.append(f"{row.get('name')}相关A股行情：{row.get('quote_error')}")
+        if row.get("price_error"):
+            warnings.append(f"{row.get('name')}价格：{row.get('price_error')}")
+        if isinstance(inventory, dict) and inventory.get("error"):
+            warnings.append(f"{row.get('name')}库存：{inventory.get('error')}")
         materials.append(
             {
                 "name": row.get("name"),
@@ -2175,6 +2335,12 @@ def build_material_radar_module(sources: dict[str, SourceResult]) -> dict[str, A
         "type": "material_radar",
         "title": "热点上游材料雷达",
         "summary": "碳酸锂置顶展示价格/库存；其它材料按三列卡片展示相关 A 股、紧缺线索和最新消息。",
+        **quality_meta(
+            source_date=source_date or today_cn().isoformat(),
+            freshness="实时" if any(item.get("price") for item in materials) else ("线索" if materials else "缺失"),
+            confidence=confidence_from_sources([material_source], bool(materials)),
+            warnings=warnings[:8],
+        ),
         "materials": materials,
         "items": [f"覆盖材料 {len(materials)} 个；只有碳酸锂展示价格/库存，其它材料不填虚假报价。"],
     }
@@ -2182,7 +2348,7 @@ def build_material_radar_module(sources: dict[str, SourceResult]) -> dict[str, A
 
 def build_material_news_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     material_source = sources.get("材料雷达") or sources.get("商品价格")
-    rows = material_source.data.get("items", []) if material_source and material_source.ok else MATERIAL_CONFIG
+    rows = material_source.data.get("items", []) if material_source and material_source.ok else configured_material_config()
     news_items = []
     for row in rows:
         for hit in material_hits(row, sources, limit=6):
@@ -2193,10 +2359,17 @@ def build_material_news_module(sources: dict[str, SourceResult]) -> dict[str, An
         return (0 if item.get("signal") != "相关" else 1, -int(digits or "0"))
 
     news_items.sort(key=sort_key)
+    data_sources = [sources.get(name) for name in ["财联社快讯", "产业新闻", "金属快讯", "重点公告", "机构研报", "同花顺热点"]]
     return {
         "type": "material_news",
         "title": "材料突发消息",
         "summary": "重点捕捉断供、涨价、出口限制、停产、检修和库存低位。",
+        **quality_meta(
+            source_date=today_cn().isoformat(),
+            freshness="近48小时/回看",
+            confidence=confidence_from_sources(data_sources, bool(news_items)),
+            warnings=[source_warning(source) for source in data_sources],
+        ),
         "news": news_items[:24],
         "items": [item.get("text", "") for item in news_items[:8]] or ["暂无材料突发线索。"],
     }
@@ -2248,12 +2421,24 @@ def build_futures_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
         empty_reason = futures.data.get("empty_reason")
         source_note = futures.data.get("source_note")
         date_policy = futures.data.get("date_policy")
+    futures_date = futures.data.get("date") if futures and futures.ok else ""
+    freshness = "缺失"
+    if rows and futures_date:
+        digits = re.sub(r"\D", "", str(futures_date))
+        today_digits = today_cn().strftime("%Y%m%d")
+        freshness = "当天" if digits == today_digits else "昨日/回看"
     return {
         "type": "futures_summary",
         "title": "期指重点席位多空",
         "summary": (
             f"中金所 IF/IC/IH/IM 重点席位汇总，日期 {futures.data.get('date') if futures and futures.ok else '暂无'}。"
             + (f"{date_policy}。" if date_policy else "")
+        ),
+        **quality_meta(
+            source_date=futures_date,
+            freshness=freshness,
+            confidence=confidence_from_sources([futures], bool(rows) and not empty_reason),
+            warnings=[source_warning(futures), empty_reason, date_policy],
         ),
         "table": rows,
         "diagnostics": diagnostics,
@@ -2271,12 +2456,12 @@ def build_reports_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     items = []
     cicc = []
     analyst_hits = []
-    analyst_watchlist = TRACKED_ANALYSTS
+    analyst_watchlist = configured_tracked_analysts()
     if reports and reports.ok:
         items = reports.data.get("items", [])[:12]
         cicc = reports.data.get("cicc_reports", [])[:10]
         analyst_hits = reports.data.get("analyst_reports", [])[:12]
-        analyst_watchlist = reports.data.get("analyst_watchlist", TRACKED_ANALYSTS)
+        analyst_watchlist = reports.data.get("analyst_watchlist", configured_tracked_analysts())
     hit_labels = {
         f"{item.get('target_broker') or item.get('org')}:{item.get('analyst')}"
         for item in analyst_hits
@@ -2301,10 +2486,17 @@ def build_reports_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
             }
         )
     overseas = collect_overseas_opinions(sources)
+    window = reports.data.get("window") if reports and reports.ok else {}
     return {
         "type": "reports",
         "title": "主题研报精华",
         "summary": "近三天研报/链接 + 海外机构观点线索 + 中金每日研报 + 指定分析师精确跟踪。",
+        **quality_meta(
+            source_date=f"{window.get('begin', '')}~{window.get('end', '')}".strip("~"),
+            freshness="近三天",
+            confidence=confidence_from_sources([reports], bool(items or cicc or analyst_hits or overseas)),
+            warnings=[source_warning(reports)],
+        ),
         "groups": [
             {"name": "中金每日研报", "items": cicc},
             {"name": "指定分析师跟踪", "items": analyst_group},
@@ -2323,7 +2515,7 @@ def build_reports_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
 def build_focus_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     events = collect_focus_events(sources)
     groups = []
-    for name in FOCUS_EVENT_GROUPS:
+    for name in configured_focus_event_groups():
         group_items = [item for item in events if item.get("group") == name][:8]
         groups.append({"name": name, "items": group_items})
     raw_items = []
@@ -2335,10 +2527,17 @@ def build_focus_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
         )
         if not group["items"]:
             raw_items.append("  暂无近48小时命中")
+    data_sources = [sources.get(name) for name in ["财联社快讯", "产业新闻", "重点公告", "金属快讯", "机构研报"]]
     return {
         "type": "focus_groups",
         "title": "重点公司/产业消息",
         "summary": "近48小时公告与消息；覆盖重点公司/产业、美国宏观与美联储、美股科技和韩股科技消息。",
+        **quality_meta(
+            source_date=today_cn().isoformat(),
+            freshness="近48小时",
+            confidence=confidence_from_sources(data_sources, bool(events)),
+            warnings=[source_warning(source) for source in data_sources],
+        ),
         "groups": groups,
         "items": raw_items,
     }
@@ -2350,10 +2549,22 @@ def build_equity_map_module(sources: dict[str, SourceResult]) -> dict[str, Any]:
     if watch and watch.ok:
         for theme, quotes in watch.data.items():
             groups.append({"name": theme, "stocks": quotes[:8]})
+    quote_dates = [
+        str(stock.get("quote_date"))
+        for group in groups
+        for stock in group.get("stocks", [])
+        if stock.get("quote_date")
+    ]
     return {
         "type": "equity_map",
         "title": "产业链 A股映射",
         "summary": "按热点方向展示相关 A 股的涨跌幅、成交额、市值和量比。",
+        **quality_meta(
+            source_date=max(quote_dates) if quote_dates else closed_daily_cutoff().isoformat(),
+            freshness="收盘" if quote_dates else "实时/回看",
+            confidence=confidence_from_sources([watch], bool(groups)),
+            warnings=[source_warning(watch)],
+        ),
         "groups": groups,
         "items": [f"{g['name']}：{'、'.join(x.get('name') + ' ' + str(x.get('change_pct')) + '%' for x in g['stocks'][:3])}" for g in groups]
         or ["暂无产业链行情。"],
@@ -2375,6 +2586,12 @@ def build_status_module(results: list[SourceResult]) -> dict[str, Any]:
         "type": "status",
         "title": "数据源状态与口径",
         "summary": f"行情截止 {market_data_cutoff}；失败源会保留在报告中，材料无直连价格时使用新闻/研报/题材线索，不填虚假报价。",
+        **quality_meta(
+            source_date=market_data_cutoff,
+            freshness="口径说明",
+            confidence="高" if not any(not r.ok for r in results) else "中",
+            warnings=[f"{r.name}失败：{r.error}" for r in results if not r.ok],
+        ),
         "statuses": statuses,
         "items": status_items,
     }
@@ -2524,6 +2741,123 @@ def render_sector_radar_text(section: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def build_decision_brief(
+    sections: list[dict[str, Any]],
+    results: list[SourceResult],
+    ai_summary: str | None,
+    ai_error: str | None,
+    generated_at: str,
+    market_data_cutoff: str,
+) -> dict[str, Any]:
+    options = configured_decision_options()
+    sector = find_section(sections, "sector_radar") or {}
+    fermentation = find_section(sections, "fermentation") or {}
+    futures = find_section(sections, "futures_summary") or {}
+    status = find_section(sections, "status") or {}
+
+    top_directions = []
+    for item in (sector.get("top_sectors") or [])[: int(options.get("max_top_directions", 3))]:
+        core = [
+            {
+                "name": stock.get("name"),
+                "code": stock.get("code"),
+                "change_pct": stock.get("change_pct"),
+            }
+            for stock in (item.get("core_stocks") or [])[:5]
+        ]
+        evidence = [
+            f"评分{item.get('score')}，证据{item.get('evidence_level')}",
+            f"涨停{item.get('limit_up_count')}只，强势{item.get('hot_stock_count')}只",
+            f"连续{item.get('flow_days')}日，成交{item.get('amount_yi')}亿",
+        ]
+        if item.get("signals"):
+            evidence.extend(item.get("signals", [])[:2])
+        top_directions.append(
+            {
+                "name": item.get("name"),
+                "strength": item.get("score"),
+                "confidence": item.get("evidence_level") or sector.get("confidence"),
+                "evidence": evidence,
+                "core_stocks": core,
+            }
+        )
+
+    if not top_directions:
+        for tag in (fermentation.get("tags") or [])[:3]:
+            top_directions.append(
+                {
+                    "name": tag.get("name"),
+                    "strength": tag.get("count"),
+                    "confidence": fermentation.get("confidence", "低"),
+                    "evidence": [f"同花顺题材词频 {tag.get('count')}"],
+                    "core_stocks": [],
+                }
+            )
+
+    tomorrow_watchlist = []
+    for item in (sector.get("top_sectors") or [])[: int(options.get("max_watch_items", 5))]:
+        core_stocks = [
+            f"{stock.get('name')}({stock.get('code')})"
+            for stock in (item.get("core_stocks") or [])[:4]
+            if stock.get("name")
+        ]
+        tomorrow_watchlist.append(
+            {
+                "direction": item.get("name"),
+                "core": "、".join(core_stocks) or "等待核心票确认",
+                "trigger": "核心票继续放量不回落，涨停/强势股扩散，相关消息或研报继续发酵。",
+                "invalid": "核心票冲高回落、涨停断层、成交明显缩量，或催化消息被证伪。",
+            }
+        )
+
+    risk_flags = []
+    failed = [result for result in results if not result.ok]
+    if failed:
+        risk_flags.append(
+            {
+                "level": "warn",
+                "text": "部分数据源失败：" + "、".join(f"{result.name}" for result in failed[:5]),
+            }
+        )
+    if futures.get("empty_reason"):
+        risk_flags.append({"level": "warn", "text": f"期指席位：{futures.get('empty_reason')}"})
+    if futures.get("freshness") in {"昨日/回看", "缺失"}:
+        risk_flags.append({"level": "note", "text": f"期指数据口径为{futures.get('freshness')}，日期 {futures.get('source_date') or '暂无'}。"})
+    for item in (sector.get("top_sectors") or [])[:3]:
+        limit_count = safe_float(item.get("limit_up_count"), 0)
+        break_count = safe_float(item.get("break_count"), 0)
+        if limit_count and break_count / max(limit_count, 1) >= 0.6:
+            risk_flags.append({"level": "warn", "text": f"{item.get('name')}炸板比例偏高，涨停结构需二次确认。"})
+    if not top_directions:
+        risk_flags.append({"level": "warn", "text": "板块强度不足或关键源缺失，暂不生成强结论。"})
+    config_error = load_intel_config().get("_error")
+    if config_error:
+        risk_flags.append({"level": "warn", "text": f"配置文件读取失败：{config_error}"})
+    risk_flags = risk_flags[: int(options.get("max_risk_flags", 6))]
+
+    futures_note = "期指席位：20:00前从前一已公布交易日开始回看，20:00后允许当天数据。"
+    if futures.get("source_date"):
+        futures_note = f"{futures_note} 当前展示日期 {futures.get('source_date')}，freshness={futures.get('freshness')}。"
+    data_notes = [
+        {"label": "生成时间", "value": generated_at},
+        {"label": "行情截止", "value": market_data_cutoff},
+        {"label": "期指口径", "value": futures_note},
+        {"label": "AI状态", "value": "已生成摘要" if ai_summary else f"未生成摘要：{ai_error or '未配置'}"},
+    ]
+    if status.get("warnings"):
+        data_notes.append({"label": "数据异常", "value": f"{len(status.get('warnings') or [])} 个源有提示"})
+
+    strongest = top_directions[0]["name"] if top_directions else "暂无明确强方向"
+    return {
+        "title": "交易准备卡",
+        "summary": f"结论先行：当前最强发酵方向为 {strongest}。次日重点看核心票延续、涨停扩散和消息催化是否同步。",
+        "top_directions": top_directions,
+        "tomorrow_watchlist": tomorrow_watchlist,
+        "risk_flags": risk_flags or [{"level": "note", "text": "暂无高优先级异常提示，仍需结合盘中成交和消息验证。"}],
+        "data_notes": data_notes,
+    }
+
+
 def deepseek_summary(
     results: list[SourceResult],
     raw_digest: str,
@@ -2569,12 +2903,38 @@ def deepseek_summary(
 
 def render_markdown(report: dict[str, Any]) -> str:
     source_status = report["source_status"]
+    decision = report.get("decision_brief") or {}
+    top_lines = []
+    for item in (decision.get("top_directions") or [])[:3]:
+        stocks = "、".join(f"{stock.get('name')}({stock.get('code')})" for stock in item.get("core_stocks", []) if stock.get("name"))
+        top_lines.append(f"- {item.get('name')}：强度 {item.get('strength')}；核心票：{stocks or '暂无'}。")
+    watch_lines = [
+        f"- {item.get('direction')}：观察 {item.get('core')}；触发：{item.get('trigger')}；失效：{item.get('invalid')}"
+        for item in (decision.get("tomorrow_watchlist") or [])[:5]
+    ]
+    risk_lines = [f"- {item.get('text')}" for item in (decision.get("risk_flags") or [])[:6]]
     lines = [
         f"# A股每日情报雷达 - {report['date']}",
         "",
         f"- 生成时间：{report['generated_at']}",
         f"- 行情截止：{report.get('market_data_cutoff') or '未标注'}",
         f"- DeepSeek：{'已生成摘要' if report.get('ai_summary') else '未生成摘要'}",
+        "",
+        "## 交易准备卡",
+        "",
+        decision.get("summary") or "暂无交易准备卡。",
+        "",
+        "### 最强方向",
+        "",
+        "\n".join(top_lines) or "- 暂无明确方向。",
+        "",
+        "### 明日观察",
+        "",
+        "\n".join(watch_lines) or "- 暂无观察项。",
+        "",
+        "### 风险提示",
+        "",
+        "\n".join(risk_lines) or "- 暂无高优先级异常提示。",
         "",
         "## AI 投研摘要",
         "",
@@ -2618,6 +2978,18 @@ def emergency_report(error: str, tb: str) -> dict[str, Any]:
         "generated_at": generated_at,
         "market_data_cutoff": market_data_cutoff,
         "market_data_cutoff_note": "北京时间15:10前取最近已收盘交易日，15:10后取当日收盘。",
+        "decision_brief": {
+            "title": "交易准备卡",
+            "summary": "本次生成流程异常，仅输出降级报告；请先检查数据源状态。",
+            "top_directions": [],
+            "tomorrow_watchlist": [],
+            "risk_flags": [{"level": "warn", "text": f"生成流程异常：{error}"}],
+            "data_notes": [
+                {"label": "生成时间", "value": generated_at},
+                {"label": "行情截止", "value": market_data_cutoff},
+                {"label": "AI状态", "value": "未生成摘要：生成流程异常"},
+            ],
+        },
         "ai_summary": None,
         "ai_error": "生成流程异常，已输出降级报告",
         "raw_digest": f"生成流程异常：{error}\n\n{tb}",
@@ -2698,11 +3070,20 @@ def generate_report(
         )
     generated_at = now_cn().strftime("%Y-%m-%d %H:%M:%S")
     market_data_cutoff = closed_daily_cutoff().isoformat()
+    decision_brief = build_decision_brief(
+        brief_sections,
+        results,
+        ai_summary,
+        ai_error,
+        generated_at,
+        market_data_cutoff,
+    )
     report = {
         "date": today_cn().isoformat(),
         "generated_at": generated_at,
         "market_data_cutoff": market_data_cutoff,
         "market_data_cutoff_note": "北京时间15:10前取最近已收盘交易日，15:10后取当日收盘。",
+        "decision_brief": decision_brief,
         "ai_summary": ai_summary,
         "ai_error": ai_error,
         "raw_digest": raw_digest,

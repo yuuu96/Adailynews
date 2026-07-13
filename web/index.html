@@ -36,6 +36,8 @@
   </header>
 
   <main>
+    <section class="decision-section" id="decisionBrief"></section>
+
     <section>
       <div class="section-head">
         <div>
@@ -81,6 +83,7 @@
     const aiSummary = document.getElementById('aiSummary');
     const rawDigest = document.getElementById('rawDigest');
     const jsonDump = document.getElementById('jsonDump');
+    const decisionBrief = document.getElementById('decisionBrief');
 
     function setToast(text) {
       toast.textContent = text || '';
@@ -111,6 +114,7 @@
       }
       dateText.textContent = describeDate(report);
       aiText.textContent = report.ai_summary ? 'DeepSeek 已生成' : `DeepSeek 未生成：${report.ai_error || '无'}`;
+      IntelUI.renderDecisionBrief(report.decision_brief, decisionBrief);
       IntelUI.renderModules(report.brief_sections, briefList);
       aiSummary.textContent = report.ai_summary || `AI 摘要未生成：${report.ai_error || '未知原因'}`;
       rawDigest.textContent = report.raw_digest || '暂无可用数据。';
