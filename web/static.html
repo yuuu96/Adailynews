@@ -74,6 +74,19 @@
     const refreshStatus = document.getElementById('refreshStatus');
     const decisionBrief = document.getElementById('decisionBrief');
 
+    function ensureFrontendFresh() {
+      const version = window.IntelUI && window.IntelUI.version;
+      if (!version) return;
+      const key = 'a_stock_intel_frontend_version';
+      const seen = localStorage.getItem(key);
+      localStorage.setItem(key, version);
+      const params = new URLSearchParams(window.location.search);
+      if (seen && seen !== version && params.get('frontend') !== version) {
+        params.set('frontend', version);
+        window.location.replace(`${window.location.pathname}?${params.toString()}${window.location.hash}`);
+      }
+    }
+
     function describeMeta(data) {
       const parts = [`${data.date || ''} ${data.generated_at || ''}`.trim()];
       if (data.market_data_cutoff) parts.push(`行情截止 ${data.market_data_cutoff}`);
@@ -153,6 +166,7 @@
 
     const storedKey = localStorage.getItem('deepseek_api_key');
     if (storedKey) apiKey.value = storedKey;
+    ensureFrontendFresh();
     resummarizeBtn.addEventListener('click', resummarize);
     refreshBtn.addEventListener('click', () => {
       loadReport(true).catch(err => {

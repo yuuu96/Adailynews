@@ -85,6 +85,19 @@
     const jsonDump = document.getElementById('jsonDump');
     const decisionBrief = document.getElementById('decisionBrief');
 
+    function ensureFrontendFresh() {
+      const version = window.IntelUI && window.IntelUI.version;
+      if (!version) return;
+      const key = 'a_stock_intel_frontend_version';
+      const seen = localStorage.getItem(key);
+      localStorage.setItem(key, version);
+      const params = new URLSearchParams(window.location.search);
+      if (seen && seen !== version && params.get('frontend') !== version) {
+        params.set('frontend', version);
+        window.location.replace(`${window.location.pathname}?${params.toString()}${window.location.hash}`);
+      }
+    }
+
     function setToast(text) {
       toast.textContent = text || '';
     }
@@ -189,6 +202,7 @@
       apiKey.value = storedKey;
       saveKey.checked = true;
     }
+    ensureFrontendFresh();
     runBtn.addEventListener('click', runReport);
     refreshBtn.addEventListener('click', loadLatest);
     if ('serviceWorker' in navigator) {

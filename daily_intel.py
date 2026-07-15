@@ -45,6 +45,7 @@ SECTOR_RADAR_HISTORY = SECTOR_RADAR_DIR / "history.jsonl"
 LATEST_JSON = REPORT_DIR / "latest.json"
 LATEST_MD = REPORT_DIR / "latest.md"
 CONFIG_PATH = ROOT / "config" / "intel_config.json"
+MAX_SECTOR_HISTORY_GAP_DAYS = 5
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 CN_TZ = ZoneInfo("Asia/Shanghai")
@@ -1889,6 +1890,13 @@ def save_sector_history(snapshot: dict[str, Any]) -> None:
     SECTOR_RADAR_HISTORY.write_text(payload + "\n", encoding="utf-8")
 
 
+def parse_history_date(value: Any) -> date | None:
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
 def sector_text_hit(text: str, keywords: list[str]) -> bool:
     text_upper = str(text or "").upper()
     return any(keyword.upper() in text_upper for keyword in keywords)
@@ -2028,11 +2036,16 @@ def sector_flow_days(name: str, history: list[dict[str, Any]], today: dict[str, 
         )
 
     days = 1 if active(today) else 0
+    anchor_date = parse_history_date(today.get("date")) or today_cn()
     for row in reversed(history):
+        row_date = parse_history_date(row.get("date"))
+        if not row_date or (anchor_date - row_date).days > MAX_SECTOR_HISTORY_GAP_DAYS:
+            break
         data = (row.get("sectors") or {}).get(name)
         if not data or not active(data):
             break
         days += 1
+        anchor_date = row_date
     return days
 
 
@@ -2046,7 +2059,7 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
     break_count = int(sector["break_count"])
     avg_change = sector["change_sum"] / sector["change_count"] if sector["change_count"] else 0
 
-    flow_days = sector_flow_days(sector["name"], history, {**sector, "amount_yi": amount_yi})
+    flow_days = sector_flow_days(sector["name"], history, {**sector, "amount_yi": amount_yi, "date": today_cn().isoformat()})
     flow_score = min(20, flow_days * 4 + hot_stock_count * 0.8 + limit_up_count * 1.2)
     limit_score = min(15, limit_up_count * 2.4 + one_word_count * 1.8 + safe_float(sector["max_board"]) * 1.2 - break_count * 0.8)
     price_score = min(20, max(avg_change, 0) * 1.6 + max(limit_up_count, 0) * 0.6)
@@ -2244,7 +2257,7 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
     return {
         "type": "sector_radar",
         "title": "板块异动雷达",
-        "summary": "资金连续性、涨停结构、价格强度和成交放大四项综合评分，满分按四项权重归一到100。",
+        "summary": "资金连续性、涨停结构、价格强度和成交放大四项综合评分；连续日按已保存的板块历史快照累积，历史断档超过5个自然日会重新计数。",
         **quality_meta(
             source_date=current_date,
             freshness="当天" if ranked else "缺失",
