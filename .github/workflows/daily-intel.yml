@@ -8,9 +8,9 @@ on:
         required: false
         default: "true"
   schedule:
-    # Beijing 08:56/20:58 = 00:56/12:58 UTC.
+    # Beijing 08:56/18:58 = 00:56/10:58 UTC.
     - cron: "56 0 * * *"
-    - cron: "58 12 * * *"
+    - cron: "58 10 * * *"
 
 permissions:
   contents: write
