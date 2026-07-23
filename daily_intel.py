@@ -7,10 +7,12 @@ failed source is surfaced in the report instead of aborting the whole run.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import multiprocessing as mp
 import os
+import random
 import re
 import signal
 import time
@@ -49,6 +51,31 @@ MAX_SECTOR_HISTORY_GAP_DAYS = 5
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 CN_TZ = ZoneInfo("Asia/Shanghai")
+SH_INDEX = {"000300", "000905", "000016", "000688", "000852", "000010"}
+EM_SESSION = requests.Session()
+EM_SESSION.headers.update({"User-Agent": UA})
+try:
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
+    _em_adapter = HTTPAdapter(
+        max_retries=Retry(
+            total=2,
+            connect=1,
+            read=0,
+            status=2,
+            backoff_factor=0.6,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET"],
+        )
+    )
+    EM_SESSION.mount("https://", _em_adapter)
+    EM_SESSION.mount("http://", _em_adapter)
+except Exception:
+    pass
+EM_MIN_INTERVAL = 1.0
+_EM_LAST_CALL = [0.0]
+
 THEME_KEYWORDS = [
     "宁德",
     "宁德时代",
@@ -102,9 +129,10 @@ SOURCE_TIMEOUTS = {
     "同花顺热点": 15,
     "北向资金": 15,
     "涨停池": 25,
+    "板块资金流": 35,
     "材料雷达": 45,
     "金属快讯": 15,
-    "财联社快讯": 9,
+    "财联社快讯": 20,
     "产业新闻": 15,
     "重点公告": 18,
     "机构研报": 35,
@@ -605,19 +633,57 @@ def call_with_alarm(fn: Callable[[], Any], timeout_s: int, label: str) -> Any:
         signal.signal(signal.SIGALRM, previous)
 
 
+def em_get(
+    url: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 15,
+    **kwargs: Any,
+) -> requests.Response:
+    """Eastmoney request helper with session reuse, retry and gentle throttling."""
+    wait = EM_MIN_INTERVAL - (time.time() - _EM_LAST_CALL[0])
+    if wait > 0:
+        time.sleep(wait + random.uniform(0.1, 0.5))
+    try:
+        response = EM_SESSION.get(url, params=params, headers=headers, timeout=timeout, **kwargs)
+        response.raise_for_status()
+        return response
+    finally:
+        _EM_LAST_CALL[0] = time.time()
+
+
+def normalize_ticker(code: str) -> str:
+    value = str(code or "").strip().lower()
+    if value.startswith(("sh", "sz", "bj")):
+        value = value[2:]
+    if re.fullmatch(r"\d{6}\.(sh|sz|bj)", value):
+        value = value[:6]
+    return value
+
+
 def get_prefix(code: str) -> str:
-    if code.startswith(("6", "9")):
+    raw = str(code or "").strip().lower()
+    if raw.startswith(("sh", "sz", "bj")):
+        return raw[:2]
+    normalized = normalize_ticker(raw)
+    if normalized.startswith(("5", "6", "9")):
         return "sh"
-    if code.startswith(("8", "920")):
+    if normalized.startswith(("4", "8")):
         return "bj"
+    if normalized in SH_INDEX:
+        return "sh"
     return "sz"
 
 
 def tencent_quote(codes: list[str]) -> dict[str, dict[str, Any]]:
     if not codes:
         return {}
-    prefixed = [f"{get_prefix(code)}{code}" for code in codes]
-    url = "http://qt.gtimg.cn/q=" + ",".join(prefixed)
+    prefixed = []
+    for code in codes:
+        raw = str(code or "").strip().lower()
+        normalized = normalize_ticker(raw)
+        prefixed.append(raw if raw.startswith(("sh", "sz", "bj")) else f"{get_prefix(raw)}{normalized}")
+    url = "https://qt.gtimg.cn/q=" + ",".join(prefixed)
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": "https://finance.qq.com/"})
     data = urllib.request.urlopen(req, timeout=15).read().decode("gbk", errors="ignore")
     result: dict[str, dict[str, Any]] = {}
@@ -646,7 +712,8 @@ def tencent_quote(codes: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def fetch_tencent_daily_close(code: str, cutoff: date) -> dict[str, Any] | None:
-    prefixed = f"{get_prefix(code)}{code}"
+    normalized = normalize_ticker(code)
+    prefixed = f"{get_prefix(code)}{normalized}"
     url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={prefixed},day,,,8,qfq"
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": "https://gu.qq.com/"})
     payload = json.loads(urllib.request.urlopen(req, timeout=8).read().decode("utf-8", errors="ignore"))
@@ -809,13 +876,110 @@ def collect_northbound() -> dict[str, Any]:
     sgt = payload.get("sgt") or []
     last_hgt = next((x for x in reversed(hgt) if x not in (None, "")), None)
     last_sgt = next((x for x in reversed(sgt) if x not in (None, "")), None)
+    hgt_points = len([x for x in hgt if x not in (None, "")])
+    sgt_points = len([x for x in sgt if x not in (None, "")])
+    reference_total = round(safe_float(last_hgt, 0) + safe_float(last_sgt, 0), 2)
     return {
         "points": len(times),
+        "hgt_points": hgt_points,
+        "sgt_points": sgt_points,
         "last_time": times[-1] if times else None,
         "hgt_yi": safe_float(last_hgt, 0),
         "sgt_yi": safe_float(last_sgt, 0),
-        "total_yi": round(safe_float(last_hgt, 0) + safe_float(last_sgt, 0), 2),
+        "total_yi": reference_total,
+        "total_label": "参考合计",
+        "sgt_reliable": False,
+        "confidence": "低",
+        "warning": "深股通分钟序列受披露口径变化影响，仅供参考；参考合计不作为权威北向净买入值。",
     }
+
+
+_BOARD_FS = {"industry": "m:90+t:2", "concept": "m:90+t:3", "region": "m:90+t:1"}
+_BOARD_PERIOD = {
+    "today": ("f62", "f62", "f184", "f3", "f204"),
+    "5d": ("f164", "f164", "f165", "f109", "f257"),
+    "10d": ("f174", "f174", "f175", "f160", None),
+}
+
+
+def board_fund_flow(board_type: str = "industry", period: str = "today", top_n: int = 100) -> dict[str, Any]:
+    if board_type not in _BOARD_FS:
+        raise ValueError(f"board_type must be one of {list(_BOARD_FS)}")
+    if period not in _BOARD_PERIOD:
+        raise ValueError(f"period must be one of {list(_BOARD_PERIOD)}")
+    fid, field_main, field_pct, field_change, field_leader = _BOARD_PERIOD[period]
+    fields = ["f12", "f14", field_change, field_main, field_pct]
+    if field_leader:
+        fields.append(field_leader)
+    if period == "today":
+        fields.extend(["f66", "f72", "f78", "f84"])
+    response = em_get(
+        "https://push2.eastmoney.com/api/qt/clist/get",
+        params={
+            "pn": "1",
+            "pz": "200",
+            "po": "1",
+            "np": "1",
+            "fltt": "2",
+            "invt": "2",
+            "fid": fid,
+            "fs": _BOARD_FS[board_type],
+            "fields": ",".join(dict.fromkeys(fields)),
+        },
+        timeout=8,
+    )
+    items = (response.json().get("data") or {}).get("diff") or []
+    rows = []
+    for index, item in enumerate(items):
+        row = {
+            "rank": index + 1,
+            "name": item.get("f14") or "",
+            "code": item.get("f12") or "",
+            "change_pct": safe_float(item.get(field_change)),
+            "main_net_yi": round(safe_float(item.get(field_main)) / 1e8, 2),
+            "main_pct": safe_float(item.get(field_pct)),
+            "leader": (item.get(field_leader) or "") if field_leader else "",
+        }
+        if period == "today":
+            row.update(
+                {
+                    "super_large_net_yi": round(safe_float(item.get("f66")) / 1e8, 2),
+                    "large_net_yi": round(safe_float(item.get("f72")) / 1e8, 2),
+                    "medium_net_yi": round(safe_float(item.get("f78")) / 1e8, 2),
+                    "small_net_yi": round(safe_float(item.get("f84")) / 1e8, 2),
+                }
+            )
+        rows.append(row)
+    return {
+        "board_type": board_type,
+        "period": period,
+        "total": len(rows),
+        "rows": rows[:top_n],
+        "source": "东财板块资金流",
+    }
+
+
+def collect_board_fund_flow() -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "date": today_cn().isoformat(),
+        "industry": {},
+        "concept": {},
+        "errors": [],
+    }
+    for board_type, periods, top_n in [
+        ("industry", ("today", "5d", "10d"), 120),
+        ("concept", ("today", "5d"), 60),
+    ]:
+        for period in periods:
+            try:
+                result[board_type][period] = board_fund_flow(board_type, period, top_n)
+            except Exception as exc:
+                result["errors"].append(
+                    f"{board_type}/{period}: {type(exc).__name__}: {str(exc)[:180]}"
+                )
+    if not any(result[board_type] for board_type in ("industry", "concept")):
+        raise RuntimeError("；".join(result["errors"]) or "东财板块资金流返回空")
+    return result
 
 
 def collect_limit_up() -> dict[str, Any]:
@@ -1007,32 +1171,93 @@ def collect_news() -> dict[str, Any]:
     }
 
 
+def cls_telegraph(page_size: int = 120) -> list[dict[str, Any]]:
+    params = {
+        "appName": "CailianpressWeb",
+        "os": "web",
+        "sv": "7.7.5",
+        "last_time": "",
+        "refresh_type": "1",
+        "rn": str(page_size),
+    }
+    query = "&".join(f"{key}={params[key]}" for key in sorted(params))
+    sign = hashlib.md5(hashlib.sha1(query.encode()).hexdigest().encode()).hexdigest()
+    response = requests.get(
+        f"https://www.cls.cn/v1/roll/get_roll_list?{query}&sign={sign}",
+        headers={"User-Agent": UA, "Referer": "https://www.cls.cn/"},
+        timeout=8,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("errno") not in (None, 0):
+        raise RuntimeError(f"财联社接口错误：{payload.get('errmsg') or payload.get('errno')}")
+    rows = []
+    for item in (payload.get("data") or {}).get("roll_data", []) or []:
+        timestamp = item.get("ctime")
+        published_at = (
+            datetime.fromtimestamp(safe_float(timestamp), tz=CN_TZ).strftime("%Y-%m-%d %H:%M:%S")
+            if safe_float(timestamp)
+            else ""
+        )
+        item_id = item.get("id") or item.get("telegraph_id")
+        rows.append(
+            {
+                "标题": item.get("title") or item.get("brief") or "",
+                "内容": item.get("content") or item.get("brief") or "",
+                "发布时间": published_at,
+                "链接": f"https://www.cls.cn/detail/{item_id}" if item_id else None,
+            }
+        )
+    return rows
+
+
 def collect_cls_news() -> dict[str, Any]:
-    if ak is None:
-        raise RuntimeError("akshare is not installed")
     items = []
     focus_topics = configured_focus_topics()
     event_groups = configured_focus_event_groups()
     focus: dict[str, list[dict[str, Any]]] = {topic: [] for topic in focus_topics}
-    for source_name, loader in [
-        ("财联社重点", lambda: ak.stock_info_global_cls(symbol="重点")),
-        ("财联社全部", lambda: ak.stock_info_global_cls(symbol="全部")),
-    ]:
-        try:
-            df = loader()
-            for row in (jsonable(df) or [])[:120]:
-                item = normalize_news_item(source_name, row)
-                if is_theme_hit(item["text"]) or is_foreign_org_hit(item["text"]) or any(is_keyword_hit(item["text"], keywords) for keywords in event_groups.values()):
-                    items.append(item)
-                    for topic, keywords in focus_topics.items():
-                        if is_keyword_hit(item["text"], keywords):
-                            focus[topic].append(item)
-        except Exception as exc:
-            items.append({"source": source_name, "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
+    provider = None
+    fallback_errors = []
+
+    def consume(source_name: str, rows: list[dict[str, Any]]) -> None:
+        nonlocal provider
+        provider = provider or source_name
+        for row in rows[:160]:
+            item = normalize_news_item(source_name, row)
+            if is_theme_hit(item["text"]) or is_foreign_org_hit(item["text"]) or any(
+                is_keyword_hit(item["text"], keywords) for keywords in event_groups.values()
+            ):
+                items.append(item)
+                for topic, keywords in focus_topics.items():
+                    if is_keyword_hit(item["text"], keywords):
+                        focus[topic].append(item)
+
+    try:
+        direct_rows = cls_telegraph(160)
+        if direct_rows:
+            consume("财联社直连", direct_rows)
+    except Exception as exc:
+        fallback_errors.append(f"财联社直连：{type(exc).__name__}: {str(exc)[:160]}")
+
+    if not provider and ak is not None:
+        for source_name, loader in [
+            ("财联社重点/akshare", lambda: ak.stock_info_global_cls(symbol="重点")),
+            ("财联社全部/akshare", lambda: ak.stock_info_global_cls(symbol="全部")),
+        ]:
+            try:
+                consume(source_name, jsonable(loader()) or [])
+            except Exception as exc:
+                fallback_errors.append(f"{source_name}：{type(exc).__name__}: {str(exc)[:160]}")
+
+    if not provider and fallback_errors:
+        raise RuntimeError("；".join(fallback_errors))
+
     return {
+        "provider": provider or "财联社直连",
         "count": len([item for item in items if "text" in item]),
         "items": items[:80],
         "focus": {topic: values[:15] for topic, values in focus.items()},
+        "fallback_errors": fallback_errors,
     }
 
 
@@ -1185,8 +1410,6 @@ def match_tracked_analysts(row: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def collect_reports() -> dict[str, Any]:
-    session = requests.Session()
-    session.headers.update({"User-Agent": UA, "Referer": "https://data.eastmoney.com/"})
     begin = (today_cn() - timedelta(days=2)).strftime("%Y-%m-%d")
     end = (today_cn() + timedelta(days=1)).strftime("%Y-%m-%d")
     params = {
@@ -1207,8 +1430,12 @@ def collect_reports() -> dict[str, Any]:
     rows = []
     for page in range(1, 4):
         page_params = {**params, "pageNo": str(page), "p": str(page), "pageNum": str(page), "pageNumber": str(page)}
-        r = session.get("https://reportapi.eastmoney.com/report/list", params=page_params, timeout=15)
-        r.raise_for_status()
+        r = em_get(
+            "https://reportapi.eastmoney.com/report/list",
+            params=page_params,
+            headers={"User-Agent": UA, "Referer": "https://data.eastmoney.com/"},
+            timeout=15,
+        )
         payload = r.json()
         batch = payload.get("data") or []
         rows.extend(batch)
@@ -1937,6 +2164,16 @@ def base_sector_state(name: str, kind: str = "theme") -> dict[str, Any]:
         "stocks": {},
         "catalysts": [],
         "signals": [],
+        "board_flow_observed": False,
+        "board_flow_board": None,
+        "board_flow_type": None,
+        "board_flow_rank": None,
+        "board_flow_today_yi": 0.0,
+        "board_flow_5d_yi": 0.0,
+        "board_flow_10d_yi": 0.0,
+        "board_flow_pct": 0.0,
+        "board_change_pct": 0.0,
+        "board_leader": None,
     }
 
 
@@ -2033,6 +2270,54 @@ def add_sector_catalyst(sectors: dict[str, dict[str, Any]], source: str, item: d
             )
 
 
+def apply_board_flow_to_sectors(sectors: dict[str, dict[str, Any]], source: SourceResult | None) -> None:
+    if not source or not source.ok or not isinstance(source.data, dict):
+        return
+    for board_type in ("industry", "concept"):
+        period_data = source.data.get(board_type) or {}
+        today_rows = ((period_data.get("today") or {}).get("rows") or [])
+        period_maps = {
+            period: {
+                str(row.get("name") or ""): row
+                for row in ((period_data.get(period) or {}).get("rows") or [])
+                if row.get("name")
+            }
+            for period in ("today", "5d", "10d")
+        }
+        for row in today_rows:
+            board_name = str(row.get("name") or "")
+            if not board_name:
+                continue
+            if board_type == "industry":
+                targets = [board_name]
+            else:
+                targets = sector_names_for_text(board_name)
+                if not targets and safe_float(row.get("main_net_yi")) > 0 and safe_float(row.get("rank")) <= 30:
+                    targets = [board_name]
+            for target in set(targets):
+                sector = ensure_sector(sectors, target, kind=board_type)
+                current_rank = safe_float(sector.get("board_flow_rank"), 9999)
+                row_rank = safe_float(row.get("rank"), 9999)
+                if sector.get("board_flow_observed") and current_rank <= row_rank:
+                    continue
+                five_day = period_maps["5d"].get(board_name) or {}
+                ten_day = period_maps["10d"].get(board_name) or {}
+                sector.update(
+                    {
+                        "board_flow_observed": True,
+                        "board_flow_board": board_name,
+                        "board_flow_type": board_type,
+                        "board_flow_rank": int(row_rank) if row_rank < 9999 else None,
+                        "board_flow_today_yi": safe_float(row.get("main_net_yi")),
+                        "board_flow_5d_yi": safe_float(five_day.get("main_net_yi")),
+                        "board_flow_10d_yi": safe_float(ten_day.get("main_net_yi")),
+                        "board_flow_pct": safe_float(row.get("main_pct")),
+                        "board_change_pct": safe_float(row.get("change_pct")),
+                        "board_leader": row.get("leader"),
+                    }
+                )
+
+
 def previous_sector_ranks(history: list[dict[str, Any]]) -> dict[str, int]:
     if not history:
         return {}
@@ -2048,6 +2333,8 @@ def sector_flow_days(name: str, history: list[dict[str, Any]], today: dict[str, 
             or safe_float(data.get("limit_up_count")) > 0
             or safe_float(data.get("hot_stock_count")) > 0
             or safe_float(data.get("amount_yi")) > 0
+            or safe_float(data.get("board_flow_today_yi")) > 0
+            or safe_float(data.get("board_flow_5d_yi")) > 0
         )
 
     days = 1 if active(today) else 0
@@ -2075,15 +2362,36 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
     avg_change = sector["change_sum"] / sector["change_count"] if sector["change_count"] else 0
 
     flow_days = sector_flow_days(sector["name"], history, {**sector, "amount_yi": amount_yi, "date": today_cn().isoformat()})
-    flow_score = min(20, flow_days * 4 + hot_stock_count * 0.8 + limit_up_count * 1.2)
+    board_flow_observed = bool(sector.get("board_flow_observed"))
+    board_today = round(safe_float(sector.get("board_flow_today_yi")), 2)
+    board_5d = round(safe_float(sector.get("board_flow_5d_yi")), 2)
+    board_10d = round(safe_float(sector.get("board_flow_10d_yi")), 2)
+    if board_flow_observed:
+        flow_score = min(
+            20,
+            min(8, max(board_today, 0) / 5)
+            + min(7, max(board_5d, 0) / 15)
+            + min(3, max(board_10d, 0) / 30)
+            + min(2, flow_days * 0.5),
+        )
+        flow_basis = "东财板块资金流"
+    else:
+        flow_score = min(20, flow_days * 4 + hot_stock_count * 0.8 + limit_up_count * 1.2)
+        flow_basis = "题材/涨停/成交回退"
     limit_score = min(15, limit_up_count * 2.4 + one_word_count * 1.8 + safe_float(sector["max_board"]) * 1.2 - break_count * 0.8)
-    price_score = min(20, max(avg_change, 0) * 1.6 + max(limit_up_count, 0) * 0.6)
+    board_change = safe_float(sector.get("board_change_pct"))
+    price_base = board_change if board_flow_observed else avg_change
+    price_score = min(20, max(price_base, 0) * 1.6 + max(limit_up_count, 0) * 0.6)
     volume_score = min(20, min(amount_yi / 15, 14) + stock_count * 0.8 + hot_stock_count * 0.4)
     score_raw = max(0, flow_score + limit_score + price_score + volume_score)
     score = min(100, score_raw / 75 * 100)
     signals = []
     if flow_days >= 2:
         signals.append(f"连续{flow_days}日增强")
+    if board_flow_observed and board_today:
+        signals.append(f"今日主力净流入{board_today:+.2f}亿")
+    if board_flow_observed and board_5d:
+        signals.append(f"5日主力净流入{board_5d:+.2f}亿")
     if hot_stock_count >= 5:
         signals.append("强势股集中")
     if limit_up_count >= 3:
@@ -2108,6 +2416,17 @@ def score_sector_state(sector: dict[str, Any], history: list[dict[str, Any]], ra
         "one_word_count": one_word_count,
         "break_count": break_count,
         "avg_change_pct": round(avg_change, 2),
+        "board_flow_observed": board_flow_observed,
+        "board_flow_basis": flow_basis,
+        "board_flow_board": sector.get("board_flow_board"),
+        "board_flow_type": sector.get("board_flow_type"),
+        "board_flow_rank": sector.get("board_flow_rank"),
+        "board_flow_today_yi": board_today,
+        "board_flow_5d_yi": board_5d,
+        "board_flow_10d_yi": board_10d,
+        "board_flow_pct": round(safe_float(sector.get("board_flow_pct")), 2),
+        "board_change_pct": round(board_change, 2),
+        "board_leader": sector.get("board_leader"),
         "score_breakdown": {
             "资金连续性": round(flow_score, 1),
             "涨停结构": round(limit_score, 1),
@@ -2191,6 +2510,9 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
                 role = "core" if str(item.get("code")) in SECTOR_THEMES.get(sector_name, {}).get("related_codes", [])[:5] else "diffusion"
                 add_sector_stock(sector, item, role)
 
+    board_flow = sources.get("板块资金流")
+    apply_board_flow_to_sectors(sectors, board_flow)
+
     for source_name, evidence in [
         ("重点公告", "公告/调研"),
         ("机构研报", "研报/新闻"),
@@ -2209,10 +2531,18 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
     ranked = []
     today_rank_seed = sorted(sectors.values(), key=lambda item: (
         item["hot_stock_count"] + item["limit_up_count"] + item["catalyst_count"],
+        max(safe_float(item.get("board_flow_today_yi")), 0)
+        + max(safe_float(item.get("board_flow_5d_yi")), 0) / 5,
         item["amount_yi"],
     ), reverse=True)
     for idx, sector in enumerate(today_rank_seed, start=1):
-        if not (sector["hot_stock_count"] or sector["limit_up_count"] or sector["catalyst_count"] or sector["amount_yi"]):
+        if not (
+            sector["hot_stock_count"]
+            or sector["limit_up_count"]
+            or sector["catalyst_count"]
+            or sector["amount_yi"]
+            or sector.get("board_flow_observed")
+        ):
             continue
         previous_rank = previous_ranks.get(sector["name"])
         rank_change = previous_rank - idx if previous_rank else None
@@ -2254,6 +2584,8 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
                     "hot_stock_count": item["hot_stock_count"],
                     "amount_yi": item["amount_yi"],
                     "catalyst_count": item["catalyst_count"],
+                    "board_flow_today_yi": item.get("board_flow_today_yi", 0),
+                    "board_flow_5d_yi": item.get("board_flow_5d_yi", 0),
                 }
                 for item in ranked[:40]
             },
@@ -2264,19 +2596,34 @@ def build_sector_radar_module(sources: dict[str, SourceResult], persist: bool = 
         f"{item['name']}：综合{item['score']}，连续{item['flow_days']}日增强，涨停{item['limit_up_count']}只，强势{item['hot_stock_count']}只，催化{item['catalyst_count']}条。"
         for item in top_sectors[:6]
     ] or ["暂无足够数据生成板块异动雷达。"]
+    board_flow_errors = (
+        board_flow.data.get("errors", [])
+        if board_flow and board_flow.ok and isinstance(board_flow.data, dict)
+        else []
+    )
     warnings = [
         source_warning(sources.get("同花顺热点")),
         source_warning(sources.get("涨停池")),
+        source_warning(board_flow),
+        "板块资金流部分周期失败：" + "；".join(board_flow_errors[:3])
+        if board_flow_errors
+        else None,
         source_warning(sources.get("产业链行情")),
     ]
+    confidence = confidence_from_sources(
+        [sources.get("同花顺热点"), sources.get("涨停池"), board_flow, sources.get("产业链行情")],
+        bool(ranked),
+    )
+    if board_flow_errors and confidence == "高":
+        confidence = "中"
     return {
         "type": "sector_radar",
         "title": "板块异动雷达",
-        "summary": "资金连续性、涨停结构、价格强度和成交放大四项综合评分；连续日按已保存的板块历史快照累积，历史断档超过5个自然日会重新计数。",
+        "summary": "资金连续性优先采用东财板块今日/5日/10日主力净流入，缺失时回退题材/涨停/成交；其余为涨停结构、价格强度和成交放大。连续日按历史快照累积，断档超过5个自然日重新计数。",
         **quality_meta(
             source_date=current_date,
             freshness="当天" if ranked else "缺失",
-            confidence=confidence_from_sources([sources.get("同花顺热点"), sources.get("涨停池"), sources.get("产业链行情")], bool(ranked)),
+            confidence=confidence,
             warnings=warnings,
         ),
         "top_sectors": top_sectors,
@@ -2651,7 +2998,18 @@ def build_raw_digest(results: list[SourceResult]) -> str:
     if north and north.ok:
         data = north.data
         lines.append(
-            f"北向资金：沪股通 {data.get('hgt_yi')} 亿，深股通 {data.get('sgt_yi')} 亿，合计 {data.get('total_yi')} 亿。"
+            f"北向资金：沪股通 {data.get('hgt_yi')} 亿；深股通分钟值 {data.get('sgt_yi')} 亿仅供参考；"
+            f"参考合计 {data.get('total_yi')} 亿，不作为权威净买入值。"
+        )
+    board_flow = sources.get("板块资金流")
+    if board_flow and board_flow.ok:
+        industry = (((board_flow.data.get("industry") or {}).get("today") or {}).get("rows") or [])[:5]
+        lines.append(
+            "板块资金流："
+            + "、".join(
+                f"{item.get('name')} {safe_float(item.get('main_net_yi')):+.2f}亿"
+                for item in industry
+            )
         )
     reports = sources.get("机构研报")
     if reports and reports.ok:
@@ -2798,6 +3156,11 @@ def build_decision_brief(
             f"涨停{item.get('limit_up_count')}只，强势{item.get('hot_stock_count')}只",
             f"连续{item.get('flow_days')}日，成交{item.get('amount_yi')}亿",
         ]
+        if item.get("board_flow_observed"):
+            evidence.append(
+                f"板块主力：今日{safe_float(item.get('board_flow_today_yi')):+.2f}亿，"
+                f"5日{safe_float(item.get('board_flow_5d_yi')):+.2f}亿"
+            )
         if item.get("signals"):
             evidence.extend(item.get("signals", [])[:2])
         top_directions.append(
@@ -2851,6 +3214,10 @@ def build_decision_brief(
         risk_flags.append({"level": "warn", "text": f"期指席位：{futures.get('empty_reason')}"})
     if futures.get("freshness") in {"昨日/回看", "缺失"}:
         risk_flags.append({"level": "note", "text": f"期指数据口径为{futures.get('freshness')}，日期 {futures.get('source_date') or '暂无'}。"})
+    north_result = next((result for result in results if result.name == "北向资金"), None)
+    north_data = north_result.data if north_result and north_result.ok and isinstance(north_result.data, dict) else {}
+    if north_data.get("warning"):
+        risk_flags.append({"level": "note", "text": str(north_data.get("warning"))})
     for item in (sector.get("top_sectors") or [])[:3]:
         limit_count = safe_float(item.get("limit_up_count"), 0)
         break_count = safe_float(item.get("break_count"), 0)
@@ -2870,6 +3237,10 @@ def build_decision_brief(
         {"label": "生成时间", "value": generated_at},
         {"label": "行情截止", "value": market_data_cutoff},
         {"label": "期指口径", "value": futures_note},
+        {
+            "label": "北向口径",
+            "value": "沪股通分钟值可作情绪参考；深股通分钟序列仅供参考，页面参考合计不是权威净买入值。",
+        },
         {"label": "AI状态", "value": "已生成摘要" if ai_summary else f"未生成摘要：{ai_error or '未配置'}"},
     ]
     if status.get("warnings"):
@@ -3053,6 +3424,7 @@ def generate_report(
         ("同花顺热点", collect_ths_hot),
         ("北向资金", collect_northbound),
         ("涨停池", collect_limit_up),
+        ("板块资金流", collect_board_fund_flow),
         ("材料雷达", collect_material_radar),
         ("财联社快讯", collect_cls_news),
         ("金属快讯", collect_metal_news),

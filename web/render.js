@@ -1,5 +1,5 @@
 (function () {
-  const FRONTEND_VERSION = 'trade-layout-tags-v1';
+  const FRONTEND_VERSION = 'a-stock-v35-sync-v1';
 
   function escapeHtml(text) {
     return String(text ?? '').replace(/[&<>"']/g, ch => ({
@@ -146,6 +146,8 @@
     if (num(item.score) >= 70) tags.push({ label: '强发酵', type: 'hot' });
     if (num(item.limit_up_count) > 0) tags.push({ label: `涨停${fmt(item.limit_up_count)}`, type: 'hot' });
     if (num(item.flow_days) >= 2) tags.push({ label: `${fmt(item.flow_days)}日连续`, type: 'info' });
+    if (item.board_flow_observed && num(item.board_flow_today_yi) > 0) tags.push({ label: '主力净流入', type: 'ok' });
+    if (item.board_flow_observed && num(item.board_flow_today_yi) < 0) tags.push({ label: '主力净流出', type: 'warn' });
     if (num(breakdown['价格强度']) >= 6) tags.push({ label: '价格强度', type: 'warn' });
     if (num(breakdown['成交放大']) >= 10) tags.push({ label: '成交放大', type: 'ok' });
     return tags;
@@ -270,6 +272,7 @@
             <div class="item-meta">
               证据 ${escapeHtml(item.evidence_level || 'NA')}
               ${item.rank_change ? ` · 排名${Number(item.rank_change) > 0 ? '上升' : '下降'}${Math.abs(Number(item.rank_change))}位` : ''}
+              ${item.board_flow_observed ? ` · 资金源 ${escapeHtml(item.board_flow_board || item.name)}` : ' · 资金源 回退估算'}
             </div>
           </div>
           <div class="sector-score">${fmt(item.score)}</div>
@@ -280,6 +283,7 @@
           <span>涨停 ${fmt(item.limit_up_count)}</span>
           <span>强势 ${fmt(item.hot_stock_count)}</span>
           <span>成交 ${fmt(item.amount_yi)}亿</span>
+          ${item.board_flow_observed ? `<span>主力今日 ${signed(item.board_flow_today_yi)}亿</span><span>5日 ${signed(item.board_flow_5d_yi)}亿</span>` : ''}
           ${compact ? '' : `<span>催化 ${fmt(item.catalyst_count)}</span>`}
         </div>
         <div class="sector-breakdown">${renderBreakdown(item)}</div>

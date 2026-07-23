@@ -1,4 +1,4 @@
-const CACHE_NAME = 'a-stock-intel-v7';
+const CACHE_NAME = 'a-stock-intel-v8';
 const ASSETS = ['./', './manifest.webmanifest', './styles.css', './render.js'];
 
 self.addEventListener('install', event => {
