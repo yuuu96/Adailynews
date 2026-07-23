@@ -20,7 +20,7 @@ from copy import deepcopy
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout, as_completed
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as datetime_time, timedelta
 from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -509,18 +509,33 @@ def run_source(name: str, fn: Callable[[], Any], timeout_s: int | None = None) -
 
 
 def jsonable(value: Any) -> Any:
-    if pd is not None and hasattr(value, "to_dict"):
-        return value.to_dict(orient="records")
+    if pd is not None:
+        if isinstance(value, pd.DataFrame):
+            return jsonable(value.to_dict(orient="records"))
+        if isinstance(value, pd.Series):
+            return jsonable(value.to_dict())
     if isinstance(value, dict):
         return {str(k): jsonable(v) for k, v in value.items()}
     if isinstance(value, list):
         return [jsonable(v) for v in value]
-    if isinstance(value, tuple):
+    if isinstance(value, (tuple, set)):
         return [jsonable(v) for v in value]
-    if isinstance(value, (datetime, date)):
+    if isinstance(value, (datetime, date, datetime_time)):
         return value.isoformat()
     if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
         return None
+    if pd is not None:
+        try:
+            if pd.isna(value):
+                return None
+        except (TypeError, ValueError):
+            pass
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return jsonable(item())
+        except Exception:
+            pass
     return value
 
 
@@ -2915,6 +2930,7 @@ def deepseek_summary(
 
 
 def render_markdown(report: dict[str, Any]) -> str:
+    report = jsonable(report)
     source_status = report["source_status"]
     decision = report.get("decision_brief") or {}
     top_lines = []
@@ -2968,11 +2984,12 @@ def render_markdown(report: dict[str, Any]) -> str:
         marker = "OK" if item["ok"] else "FAIL"
         suffix = f" - {item['error']}" if item.get("error") else ""
         lines.append(f"- {marker} {item['name']} ({item['elapsed_ms']}ms){suffix}")
-    lines.extend(["", "## 结构化数据", "", "```json", json.dumps(report["sources"], ensure_ascii=False, indent=2), "```", ""])
+    lines.extend(["", "## 结构化数据", "", "```json", json.dumps(jsonable(report["sources"]), ensure_ascii=False, indent=2), "```", ""])
     return "\n".join(lines)
 
 
 def write_report_files(report: dict[str, Any]) -> None:
+    report = jsonable(report)
     dated_json = REPORT_DIR / f"{report['date']}.json"
     dated_md = REPORT_DIR / f"{report['date']}.md"
     for path in [dated_json, LATEST_JSON]:
@@ -3020,6 +3037,7 @@ def emergency_report(error: str, tb: str) -> dict[str, Any]:
         ],
         "sources": {result.name: {"ok": result.ok, "data": result.data, "error": result.error}},
     }
+    report = jsonable(report)
     report["markdown"] = render_markdown(report)
     write_report_files(report)
     return report
@@ -3106,6 +3124,7 @@ def generate_report(
         "brief_sections": brief_sections,
         "sources": {r.name: {"ok": r.ok, "data": r.data, "error": r.error} for r in results},
     }
+    report = jsonable(report)
     if progress_callback:
         progress_callback({"stage": "writing", "source": "写入报告", "done": len(source_defs) + 1, "total": total_steps})
     report["markdown"] = render_markdown(report)

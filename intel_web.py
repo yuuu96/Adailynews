@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from daily_intel import generate_report, load_latest
+from daily_intel import generate_report, jsonable, load_latest
 
 
 ROOT = Path(__file__).resolve().parent
@@ -113,7 +113,7 @@ class IntelHandler(BaseHTTPRequestHandler):
         print(f"[intel-web] {self.address_string()} - {fmt % args}")
 
     def send_json(self, payload: object, status: int = 200) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        body = json.dumps(jsonable(payload), ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
