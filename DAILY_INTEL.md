@@ -1,62 +1,90 @@
-# A 股情报雷达试验版
+# A股情报雷达运行说明
 
-本试验版提供一个本地移动端 PWA 页面，用于一键生成 A 股盘后情报日报。
+本项目同时提供本地 PWA 和 GitHub Pages 两种运行方式。两者使用同一套报告结构与前端渲染逻辑，但生成方式不同。
 
-## 运行
+## 在线版
+
+访问地址：
+
+```text
+https://yuuu96.github.io/Adailynews/
+```
+
+GitHub Pages 托管的是静态页面，不需要个人电脑或本地进程在线。报告由 GitHub Actions 在云端生成并部署。
+
+### 自动更新时间
+
+| 日期 | 北京时间 | UTC cron |
+| --- | --- | --- |
+| 周一至周五 | 08:56 | `56 0 * * 1-5` |
+| 周一至周五 | 18:58 | `58 10 * * 1-5` |
+| 周六 | 不更新 | 无 |
+| 周日 | 18:58 | 包含在 `58 10 * * 0-5` |
+
+工作流将周日晚间与工作日晚间合并为 `58 10 * * 0-5`。GitHub Actions 不保证秒级准时，繁忙时可能延迟数分钟。
+
+页面顶部的“刷新报告”只会绕过浏览器缓存，重新读取云端最近一次生成的 `latest.json`。它不会启动 Python 采集任务，也不会重新部署网站。
+
+需要立即生成时，进入 GitHub 仓库的 `Actions` 页面，选择 `Daily A-share Intelligence`，点击 `Run workflow`。手动运行不受星期和时间限制。
+
+## 本地版
+
+安装依赖后启动：
 
 ```bash
-cd /Users/chenyutong/Downloads/a-stock-data-main
+cd /path/to/Adailynews
+python3 -m venv .venv
+source .venv/bin/activate
+pip install requests pandas akshare mootdx
 python3 intel_web.py
 ```
 
-打开：
+本机打开：
 
 ```text
 http://127.0.0.1:8765
 ```
 
-这个地址只允许本机访问。
-
-同一 Wi-Fi 下用手机访问时：
+同一 Wi-Fi 下允许手机访问：
 
 ```bash
 python3 intel_web.py --host 0.0.0.0 --port 8765
 ```
 
-然后在手机浏览器打开 `http://你的Mac局域网IP:8765`。
+然后在手机浏览器打开 `http://电脑局域网IP:8765`。该地址只在电脑运行服务且设备处于同一可访问网络时有效。
 
-如果要“任何地方的移动端都能访问”，需要把服务部署到云服务器、Cloudflare/GitHub Actions 等云端环境；本地试验版在 Mac 关机、睡眠或不在同一网络时无法访问。
+本地页面提供：
+
+- “一键生成”：启动完整数据采集任务
+- “刷新最新”：读取本地最近一次报告
+- 采集阶段、进度、等待时间和预计剩余时间
+- 可选 DeepSeek API Key 输入
 
 ## DeepSeek
 
-如果需要 AI 投研摘要，先设置：
+AI 摘要不是生成报告的必要条件。没有 Key 时，原始聚合、规则摘要、交易准备卡和九个模块仍会生成。
+
+本地环境变量：
 
 ```bash
 export DEEPSEEK_API_KEY="你的 key"
-```
-
-默认模型是 `deepseek-v4-pro`，也可以覆盖：
-
-```bash
 export DEEPSEEK_MODEL="deepseek-v4-pro"
+python3 intel_web.py
 ```
 
-没有设置 key 时，系统仍会生成原始聚合报告，并在页面里标注 AI 摘要未生成。
+也可以在本地页面输入 Key。勾选“仅保存在本机浏览器”后，Key 会保存到当前浏览器的 `localStorage`，不会写入项目文件。
 
-也可以直接在网页顶部输入 DeepSeek API Key。页面只会把 key 传给本次 `/api/run` 任务；勾选“仅保存在本机浏览器”时，key 会保存在当前浏览器的 `localStorage`，不会写入项目文件。
+云端自动摘要应在 GitHub 仓库中配置 Secret：
 
-## 进度
+```text
+Settings -> Secrets and variables -> Actions -> DEEPSEEK_API_KEY
+```
 
-点击“一键生成”后，页面会显示：
+不要将真实 API Key 写入代码、配置文件或提交历史。
 
-- 当前采集阶段或数据源
-- 进度条
-- 已等待时间
-- 根据当前进度估算的剩余时间
+## 报告输出
 
-## 输出
-
-报告会保存到：
+本地生成结果保存在：
 
 ```text
 reports/daily/YYYY-MM-DD.md
@@ -65,49 +93,37 @@ reports/daily/latest.md
 reports/daily/latest.json
 ```
 
-## 接口
+板块连续性历史保存在：
+
+```text
+reports/sector_radar/history.jsonl
+```
+
+GitHub Actions 会持久化板块历史，再由 `build_static_site.py` 将最新报告构建到 `site/` 并部署到 Pages。
+
+## 本地接口
 
 - `GET /`：移动端页面
-- `POST /api/run`：一键生成
-- `GET /api/latest`：读取最新报告
+- `POST /api/run`：启动生成任务
+- `GET /api/job/{job_id}`：读取生成进度和结果
+- `GET /api/latest`：读取最新本地报告
 
-## 云端免费版
+## 自定义配置
 
-仓库内置了 GitHub Pages + GitHub Actions 的免费部署骨架：
-
-```text
-.github/workflows/daily-intel.yml
-build_static_site.py
-web/static.html
-```
-
-### 定时
-
-GitHub Actions 的 cron 只能使用 UTC。为了固定 **纽约时间 11:00**，工作流设置了两个 UTC 触发点：
+统一配置文件为：
 
 ```text
-15:00 UTC  # 纽约夏令时 EDT 的 11:00
-16:00 UTC  # 纽约冬令时 EST 的 11:00
+config/intel_config.json
 ```
 
-工作流内部会再次检查 `America/New_York` 当前时间，只有纽约时间正好 11:00 才真正生成报告。
+它控制产业链观察股票、重点消息关键词、事件分组、指定分析师和交易准备卡数量。配置字段缺失时，生成器会回退到代码中的默认值。
 
-### DeepSeek API
+## GitHub Pages 首次部署
 
-推荐把 key 放进 GitHub Secrets：
+1. 在仓库 `Settings -> Pages` 中选择 `GitHub Actions` 作为 Source。
+2. 如需 AI 摘要，在 Actions Secrets 中添加 `DEEPSEEK_API_KEY`。
+3. 手动运行一次 `Daily A-share Intelligence`。
+4. 等待 `Generate report`、`Build static site` 和 `Deploy to GitHub Pages` 全部完成。
+5. 打开 `https://yuuu96.github.io/Adailynews/`。
 
-```text
-DEEPSEEK_API_KEY
-```
-
-这样每天定时生成时会自动带 AI 摘要。
-
-静态页面也保留了一个可选 API 输入框，可以对当前页面已有数据重新摘要。这个 key 只保存在当前浏览器；如果浏览器跨域限制阻止调用 DeepSeek，请使用 GitHub Secret 方式。
-
-### 部署步骤
-
-1. 把仓库推到 GitHub。
-2. 在仓库 `Settings -> Secrets and variables -> Actions` 添加 `DEEPSEEK_API_KEY`。
-3. 在 `Settings -> Pages` 选择 `GitHub Actions` 作为部署来源。
-4. 手动运行一次 `Daily A-share Intelligence` 工作流。
-5. 打开 GitHub Pages 链接，在手机上访问。
+若工作流失败，应先查看失败步骤日志。任一数据源采集失败通常只会形成状态警告，不应终止整份报告；构建或 JSON 序列化错误则会使工作流失败。

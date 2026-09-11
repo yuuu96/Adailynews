@@ -1,352 +1,113 @@
-# Adailynews
+# A股情报雷达
 
-A daily news for me. This repository now includes a mobile-friendly A-share intelligence PWA and daily GitHub Actions report workflow, built on top of the a-stock-data toolkit.
+`Adailynews` 是一个面向移动端的 A 股每日情报面板。项目通过 GitHub Actions 自动采集市场热点、涨停结构、板块资金、股指期货席位、研报和重点产业消息，并发布到 GitHub Pages。
 
-# a-stock-data
+维护者：[yuuu96](https://github.com/yuuu96)
 
-A 股全栈数据工具包 — 6 层架构 · 15 个端点 · 7 个数据源实测
+[打开在线版](https://yuuu96.github.io/Adailynews/) | [查看运行说明](./DAILY_INTEL.md) | [查看更新记录](./CHANGELOG.md)
 
-一个自包含的 Skill 文件，把分散在 7 个数据源里的 A 股原始数据整合成 AI 编程助手直接能用的工具集。你不用再背 mootdx 的 K 线参数、东财的 PDF Referer 头、iwencai 的 X-Claw 鉴权——全部封装好了。
+![A股情报雷达页面预览](./assets/adailynews-preview.jpg)
 
-> 兼容 [Claude Code](https://github.com/anthropics/claude-code) · [Codex](https://github.com/openai/codex) · [OpenClaw](https://github.com/anthropics/openclaw)
->
-> Skill 文件本质是结构化 Markdown + 内嵌 Python，任何支持上下文注入的 AI 编程助手都能用。
+## 项目能力
 
----
+页面顶部提供“交易准备卡”，先展示最强方向、明日观察、风险提示和关键数据口径。其下保留九个情报模块：
 
-## Donate
+1. **最强发酵方向**：结合题材热度、涨停行业集中度和一字板结构识别当日主线。
+2. **板块异动雷达**：按资金连续性、涨停结构、价格强度和成交放大观察板块变化。
+3. **热点上游材料雷达**：跟踪碳酸锂及半导体材料的紧缺线索、相关 A 股和产业消息。
+4. **材料突发消息**：聚合涨价、断供、扩产和供需变化等事件。
+5. **期指重点席位多空**：汇总中信系及其他重点机构在 IF、IC、IH、IM 的持仓方向。
+6. **主题研报精华**：展示中金每日研报、指定分析师跟踪、近三天研报和海外机构观点线索。
+7. **重点公司/产业消息**：关注宁德时代、美股科技、韩股科技、半导体上游、亿纬锂能及美国宏观与美联储。
+8. **产业链 A股映射**：展示重点产业方向对应股票的价格、涨跌幅、成交额、市值和量比。
+9. **数据源状态与口径**：公开数据来源、日期、置信度、降级路径和异常提示。
 
-如果这个工具帮到了你的投研工作流，欢迎请作者喝杯咖啡 ☕
+## 数据与口径
 
-<p align="center">
-  <img src="./assets/wechat-sponsor.jpg" width="240" alt="微信赞赏码">
-</p>
-<p align="center">
-  <a href="https://ifdian.net/a/simonlin">爱发电</a> ·
-  <a href="https://buymeacoffee.com/simonlin1212">Buy Me a Coffee</a>
-</p>
+| 数据类型 | 主要来源 | 页面口径 |
+| --- | --- | --- |
+| A 股行情 | 腾讯财经 | 优先使用已收盘交易日行情，展示行情日期和来源 |
+| 热点与涨停 | 同花顺、东方财富 | 题材词频、涨停池、行业集中度和一字板 |
+| 板块资金 | 东方财富 | 行业与概念板块的当日、5 日或 10 日资金数据 |
+| 财经快讯 | 财联社、东方财富、上海金属网 | 聚合后按关注主题和时间窗口筛选 |
+| 公司公告 | 巨潮资讯 | 重点公司的最新公告和业绩信息 |
+| 机构研报 | 东方财富研报接口及公开资讯线索 | 链接或 PDF 均可，区分正式研报和观点线索 |
+| 股指期货席位 | 中金所公开排名，经 akshare 读取 | 北京时间 20:00 前从前一日开始回看，20:00 后允许使用当天已公布数据 |
 
-> 想要什么数据端点？欢迎开 [Issue](https://github.com/simonlin1212/a-stock-data/issues) 提需求，赞助者的 Issue 优先处理。
+关键模块会显示 `实时`、`昨日`、`回看`、`缺失` 或 `低置信` 等标签。单一数据源失败不会中断整份报告，页面会保留失败原因和实际使用的降级来源。
 
----
+## 自动更新
 
-## 架构
+GitHub Actions 使用 UTC cron，当前对应的北京时间计划为：
 
+| 日期 | 自动生成时间 |
+| --- | --- |
+| 周一至周五 | 08:56、18:58 |
+| 周六 | 不自动生成 |
+| 周日 | 18:58 |
+
+GitHub Actions 的定时任务可能比设定时间延迟数分钟。页面上的“刷新报告”只会绕过缓存并重新读取最近一次生成结果；真正重新采集数据需要等待定时任务，或在仓库的 Actions 页面手动运行 `Daily A-share Intelligence`。
+
+## DeepSeek 摘要
+
+AI 摘要是可选能力。未配置 API Key 时，采集、规则摘要和九个模块仍会正常生成。
+
+云端自动摘要推荐在仓库 `Settings -> Secrets and variables -> Actions` 中添加：
+
+```text
+DEEPSEEK_API_KEY
 ```
-A 股全栈数据 · 六层架构
-│
-├── 行情层    mootdx + 腾讯财经       K线 + 五档盘口 + PE/PB/市值/换手率
-├── 研报层    东财 + akshare + iwencai 研报列表 / PDF下载 / 一致预期 / NL搜索
-├── 信号层    同花顺热点 + 北向资金    当日强势股 + 题材归因 + 北向分钟流向
-├── 新闻层    akshare × 3              个股新闻 / 财联社快讯 / 全球资讯
-├── 基础数据  mootdx finance / F10     37字段季报 + 9类公司资料
-└── 公告层    巨潮 cninfo + mootdx     沪深北全量公告
-```
 
----
+模型默认使用 `deepseek-v4-pro`。在线页面也允许临时输入 Key，对已加载的数据重新生成摘要；Key 仅保存在当前浏览器的 `localStorage`，不会写入仓库。
 
-## 快速开始
-
-**3 步，2 分钟。**
+## 本地运行
 
 ```bash
-# 1. 创建 skill 目录
-mkdir -p ~/.claude/skills/a-stock-data
-
-# 2. 把 SKILL.md 放进去
-curl -o ~/.claude/skills/a-stock-data/SKILL.md \
-  https://raw.githubusercontent.com/simonlin1212/a-stock-data/main/SKILL.md
-
-# 3. 安装依赖
-pip install mootdx akshare requests pandas
+git clone https://github.com/yuuu96/Adailynews.git
+cd Adailynews
+python3 -m venv .venv
+source .venv/bin/activate
+pip install requests pandas akshare mootdx
+python3 intel_web.py
 ```
 
-启动 Claude Code，说一句「帮我看看 688017 的估值」，自动激活。
-
-> **Codex / OpenClaw 用户：** 把 SKILL.md 的内容贴入你的系统 prompt 或项目上下文文件即可，内嵌的 Python 代码可直接执行。
-
----
-
-## 15 个端点能力清单
-
-### 行情层（实时，不封 IP）
-
-| 端点 | 数据 |
-|------|------|
-| mootdx K 线 | 日/周/月/1m/5m/15m/30m/60m |
-| mootdx 盘口 | 五档买卖盘 + 实时报价 46 字段 |
-| mootdx 逐笔 | 每笔成交明细（时间/价格/量/买卖方向） |
-| 腾讯财经 | PE(TTM) / PB / 总市值 / 流通市值 / 换手率 / 涨跌停价 |
-
-### 研报层
-
-| 端点 | 数据 |
-|------|------|
-| 东财 reportapi | 研报列表 + 评级 + 三年 EPS 预测 |
-| 东财 PDF 下载 | 完整研报 PDF（已处理 Referer 鉴权） |
-| akshare 一致预期 | 同花顺源机构一致预期 EPS |
-| iwencai NL 搜索 | 自然语言跨主题研报检索 |
-
-### 信号层
-
-| 端点 | 数据 |
-|------|------|
-| 同花顺热点 | 当日强势股 + 题材归因 reason tags（编辑部人工标注） |
-| 同花顺北向（实时） | 沪股通 / 深股通分钟级流向（262 个时间点） |
-| 同花顺北向（历史） | 北向资金日级历史 |
-
-### 新闻层
-
-| 端点 | 数据 |
-|------|------|
-| 个股新闻 | 东财个股新闻流 |
-| 财联社快讯 | 分钟级电报 |
-| 全球资讯 | 东财全球财经资讯 |
-
-### 基础数据 + 公告
-
-| 端点 | 数据 |
-|------|------|
-| 季报快照 | 37 字段（EPS / ROE / 净利润 / 主营收入...） |
-| F10 公司资料 | 9 大类文本（公司概况 / 股东研究 / 行业分析...） |
-| 巨潮公告 | 沪深北交所全量公告 |
-
-### 鉴权要求
-
-6 个数据源**完全免费无 Key**，仅 iwencai 语义搜索需要 API Key（[申请地址](https://www.iwencai.com/skillhub)）。
-
----
-
-## 使用示例
-
-跟你的 AI 助手说这些话就能激活：
-
-| 场景 | 说什么 |
-|------|--------|
-| 个股估值 | 「帮我估一下 688017，给我 PE / PEG / 消化时间」 |
-| 题材归因 | 「今天哪些股票走强，主要是什么题材」 |
-| 研报检索 | 「人形机器人产业链最近的研报，特别是丝杠和减速器」 |
-| 北向资金 | 「今天北向资金流入流出怎么样」 |
-| 新闻公告 | 「拉一下 300476 最近的新闻和公告」 |
-| 批量对比 | 「帮我对比这 5 只半导体股的估值」 |
-
-### 内置 4 套调研流程
-
-| 流程 | 做什么 | 耗时 |
-|------|--------|------|
-| 单票估值 | 实时价 → 一致预期 EPS → 前向 PE / PEG / PE 消化年数 | 30 秒 |
-| 批量对比 | 多只股票横向估值排列 | 1 分钟 |
-| 主题研报 | iwencai 多关键词 NL 搜索 + 东财 PDF 交叉补充 | 2 分钟 |
-| 新标的调研 | 机构覆盖检查 → 估值 → 壁垒判断 | 1 分钟 |
-
----
-
-## 数据源优先级
-
-| 优先级 | 数据源 | 协议 | 封 IP 风险 |
-|--------|--------|------|-----------|
-| 1 | mootdx | TCP (7709) | 极低 |
-| 2 | 腾讯财经 | HTTP | 低 |
-| 3 | akshare | Python | 中（东财源） |
-| 4 | iwencai | OpenAPI | 低（需 Key） |
-| 5 | 东财 PDF | HTTP | 低 |
-| 6 | 同花顺热点 | HTTP | 极低（零鉴权） |
-| 7 | 同花顺北向 | HTTP | 极低（零鉴权） |
-
----
-
-## FAQ
-
-**Q: mootdx 和腾讯有什么区别？**
-互补。mootdx = 交易层（价格 + 盘口 + K 线），腾讯 = 估值层（PE / PB / 市值 / 换手率 / 涨跌停价）。两者都不封 IP。
-
-**Q: 腾讯 API 字段 43 是 PB 吗？**
-不是。43 = 振幅%，46 = PB。网上大量教程写错了，这里是实测校准结果。
-
-**Q: akshare 报超时？**
-东财源有反爬，加 `time.sleep(1~3)` 重试。行情请走 mootdx，不受影响。
-
-**Q: iwencai 返回 401？**
-检查：(1) API Key 有效性 (2) 是否携带了 X-Claw-* Headers。SkillHub 2.0 后强制要求。
-
-**Q: 同花顺热点 reason 字段为空？**
-盘后数据还没更新，15:30 之后再调。个别 ST 股没有人工标注，`dropna` 过滤即可。
-
-**Q: 不用 Claude Code，能用吗？**
-能。SKILL.md 本质是 Markdown + 内嵌 Python 代码。Codex、OpenClaw 或任何 AI 编程助手都能读取。你也可以直接把 Python 代码段复制出来在自己的脚本里跑。
-
----
-
-## 更新日志
-
-见 [CHANGELOG.md](./CHANGELOG.md)。
-
----
-
-## Disclaimer
-
-本项目仅提供数据获取工具，不构成任何投资建议。股市有风险，投资需谨慎。
-
----
-
-## License
-
-[Apache License 2.0](./LICENSE) — 自由使用，注明出处即可。
-
-**作者：** Simon 林 · 抖音「Simon林」 · 公众号「硅基世纪」
-
----
-
-<details>
-<summary><b>🇬🇧 English</b></summary>
-
-# a-stock-data
-
-Full-stack data toolkit for China A-Share market — 6-layer architecture · 15 endpoints · 7 data sources, battle-tested
-
-A self-contained Skill file that consolidates raw A-share data from 7 sources into a ready-to-use toolkit for AI coding assistants. No need to memorize mootdx candlestick parameters, Eastmoney PDF Referer headers, or iwencai X-Claw authentication — it's all handled.
-
-> Compatible with [Claude Code](https://github.com/anthropics/claude-code) · [Codex](https://github.com/openai/codex) · [OpenClaw](https://github.com/anthropics/openclaw)
->
-> The Skill file is structured Markdown + embedded Python. Any AI coding assistant with context injection can use it.
-
----
-
-## Architecture
-
-```
-China A-Share Full-Stack Data · 6-Layer Architecture
-│
-├── Market Data    mootdx + Tencent Finance     Candlesticks + Level-2 Order Book + PE/PB/Market Cap/Turnover
-├── Research       Eastmoney + akshare + iwencai Report list / PDF download / Consensus EPS / NL search
-├── Signals        THS Hot Stocks + Northbound   Today's movers + Sector attribution + Minute-level fund flow
-├── News           akshare × 3                   Stock news / CLS flash / Global finance
-├── Fundamentals   mootdx finance / F10          37-field quarterly report + 9 categories of company data
-└── Filings        cninfo + mootdx               Full filings across SSE / SZSE / BSE
-```
-
----
-
-## Quick Start
-
-**3 steps, 2 minutes.**
+电脑浏览器打开 `http://127.0.0.1:8765`。同一局域网内需要手机访问时运行：
 
 ```bash
-# 1. Create skill directory
-mkdir -p ~/.claude/skills/a-stock-data
-
-# 2. Download SKILL.md
-curl -o ~/.claude/skills/a-stock-data/SKILL.md \
-  https://raw.githubusercontent.com/simonlin1212/a-stock-data/main/SKILL.md
-
-# 3. Install dependencies
-pip install mootdx akshare requests pandas
+python3 intel_web.py --host 0.0.0.0 --port 8765
 ```
 
-Launch Claude Code and say "Check the valuation of 688017" — the skill activates automatically.
+然后在手机浏览器打开 `http://电脑局域网IP:8765`。本地模式支持“一键生成”和实时进度；GitHub Pages 是静态页面，不依赖个人电脑在线。
 
-> **Codex / OpenClaw users:** Paste the contents of SKILL.md into your system prompt or project context file. The embedded Python code is ready to execute.
+## 自定义关注内容
 
----
+公开部署使用仓库配置文件 [`config/intel_config.json`](./config/intel_config.json)。可在其中调整：
 
-## 15 Endpoints
+- 产业链股票观察列表
+- 重点公司和新闻关键词
+- 美股、韩股科技及宏观事件组
+- 指定券商分析师
+- 交易准备卡的展示数量
 
-### Market Data (real-time, no IP ban)
+修改配置并推送后，下次 GitHub Actions 生成报告时统一生效。
 
-| Endpoint | Data |
-|----------|------|
-| mootdx Candlesticks | Daily / Weekly / Monthly / 1m / 5m / 15m / 30m / 60m |
-| mootdx Order Book | Level-2 bid/ask + real-time quote (46 fields) |
-| mootdx Tick-by-tick | Every trade (time / price / volume / direction) |
-| Tencent Finance | PE(TTM) / PB / Market Cap / Float Cap / Turnover / Price Limits |
+## 主要文件
 
-### Research Reports
+| 文件 | 用途 |
+| --- | --- |
+| `daily_intel.py` | 数据采集、清洗、评分、报告生成与 DeepSeek 摘要 |
+| `intel_web.py` | 本地 PWA 服务及一键生成接口 |
+| `build_static_site.py` | 将最新报告构建为 GitHub Pages 静态站点 |
+| `web/` | 移动端页面、渲染逻辑、样式和 Service Worker |
+| `config/intel_config.json` | 关注股票、主题、公司和分析师配置 |
+| `.github/workflows/daily-intel.yml` | 定时采集和 GitHub Pages 部署流程 |
 
-| Endpoint | Data |
-|----------|------|
-| Eastmoney reportapi | Report list + ratings + 3-year EPS forecasts |
-| Eastmoney PDF | Full research report PDF (Referer auth handled) |
-| akshare Consensus | Institutional consensus EPS (THS source) |
-| iwencai NL Search | Natural language cross-topic report search |
+## 风险声明
 
-### Signals
+本项目聚合公开数据并提供研究线索，不保证数据源持续可用，也不构成投资建议。行情、席位、新闻和研报均应结合原始来源复核。股市有风险，投资需谨慎。
 
-| Endpoint | Data |
-|----------|------|
-| THS Hot Stocks | Today's strong stocks + sector attribution tags (editorial annotations) |
-| THS Northbound (real-time) | Shanghai/Shenzhen Connect minute-level flow (262 data points) |
-| THS Northbound (historical) | Daily historical northbound fund flow |
+## 致谢与许可
 
-### News
+本项目的数据获取能力部分基于 Simon Lin 的开源项目 [`a-stock-data`](https://github.com/simonlin1212/a-stock-data)，并在此基础上开发了独立的采集编排、情报模块、历史连续性、数据可信度标注、PWA 页面和 GitHub Actions 发布流程。
 
-| Endpoint | Data |
-|----------|------|
-| Stock News | Eastmoney per-stock news feed |
-| CLS Flash | Minute-level telegrams |
-| Global News | Eastmoney global finance news |
-
-### Fundamentals + Filings
-
-| Endpoint | Data |
-|----------|------|
-| Quarterly Snapshot | 37 fields (EPS / ROE / Net Profit / Revenue...) |
-| F10 Company Data | 9 categories (Overview / Shareholders / Industry...) |
-| cninfo Filings | Full filings across all exchanges |
-
-### Authentication
-
-6 data sources are **completely free, no API key needed**. Only iwencai semantic search requires an API key ([apply here](https://www.iwencai.com/skillhub)).
-
----
-
-## Usage Examples
-
-Just tell your AI assistant:
-
-| Scenario | Prompt |
-|----------|--------|
-| Valuation | "Estimate 688017 — give me PE / PEG / payback period" |
-| Sector Attribution | "Which stocks are strong today and what sectors are driving them" |
-| Research Reports | "Latest reports on humanoid robot supply chain, especially ball screws and reducers" |
-| Northbound Flow | "How's northbound capital flow looking today" |
-| News & Filings | "Pull recent news and filings for 300476" |
-| Batch Compare | "Compare valuations of these 5 semiconductor stocks" |
-
-### 4 Built-in Research Workflows
-
-| Workflow | What it does | Time |
-|----------|-------------|------|
-| Single Stock Valuation | Live price → Consensus EPS → Forward PE / PEG / PE payback years | 30 sec |
-| Batch Comparison | Side-by-side valuation ranking | 1 min |
-| Thematic Research | iwencai multi-keyword NL search + Eastmoney PDF cross-reference | 2 min |
-| New Target Research | Institutional coverage check → Valuation → Moat assessment | 1 min |
-
----
-
-## Data Source Priority
-
-| Priority | Source | Protocol | IP Ban Risk |
-|----------|--------|----------|-------------|
-| 1 | mootdx | TCP (7709) | Very low |
-| 2 | Tencent Finance | HTTP | Low |
-| 3 | akshare | Python | Medium (Eastmoney source) |
-| 4 | iwencai | OpenAPI | Low (key required) |
-| 5 | Eastmoney PDF | HTTP | Low |
-| 6 | THS Hot Stocks | HTTP | Very low (zero auth) |
-| 7 | THS Northbound | HTTP | Very low (zero auth) |
-
----
-
-## Disclaimer
-
-This project provides data access tools only and does not constitute investment advice. Investing involves risk.
-
----
-
-## License
-
-[Apache License 2.0](./LICENSE)
-
-**Author:** Simon Lin · TikTok [@simonlin121212](https://www.tiktok.com/@simonlin121212) · Douyin "Simon林" · WeChat Official Account "硅基世纪"
-
-</details>
+项目保留原项目的 [Apache License 2.0](./LICENSE) 许可和版权声明。`AGENTS.md` 与 `SKILL.md` 为底层数据工具说明，保留原作者署名；本仓库的 `Adailynews` 应用由 [yuuu96](https://github.com/yuuu96) 维护。
